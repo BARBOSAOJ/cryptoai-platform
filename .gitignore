@@ -1,0 +1,18 @@
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.log
+
+# Java
+target/
+.mvn/
+
+# Python
+__pycache__/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
