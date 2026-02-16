@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Base de Datos Relacional
+  postgres:
+    image: postgres:15-alpine
+    container_name: crypto_db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: crypto_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Cola de Mensajería (Event Bus)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: crypto_mq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: adminpassword
+
+  # Caché de alta velocidad
+  redis:
+    image: redis:7-alpine
+    container_name: crypto_cache
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
