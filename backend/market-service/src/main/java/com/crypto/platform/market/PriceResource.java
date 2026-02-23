@@ -13,15 +13,14 @@ public class PriceResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Map<String, String> getAllPrices() {
-        return binanceClient.getAllPrices();
+    public Map<String, BinanceSocketClient.MarketTick> getAllPrices() {
+        return binanceClient.getAllMarketData();
     }
 
     @GET
     @Path("/{symbol}")
-    @Produces(MediaType.TEXT_PLAIN)
-    public String getPrice(@PathParam("symbol") String symbol) {
-        String price = binanceClient.getPrice(symbol.toUpperCase());
-        return (price != null) ? price : "0.00";
+    @Produces(MediaType.APPLICATION_JSON)
+    public BinanceSocketClient.MarketTick getPrice(@PathParam("symbol") String symbol) {
+        return binanceClient.getMarketTick(symbol.toUpperCase());
     }
 }

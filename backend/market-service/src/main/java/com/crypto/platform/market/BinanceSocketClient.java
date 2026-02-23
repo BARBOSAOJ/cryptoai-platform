@@ -16,7 +16,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @ClientEndpoint
 public class BinanceSocketClient {
 
-    private final ConcurrentHashMap<String, String> latestPrices = new ConcurrentHashMap<>();
+    public static class MarketTick {
+        public String price;
+        public String volume;
+
+        public MarketTick(String price, String volume) {
+            this.price = price;
+            this.volume = volume;
+        }
+    }
+
+    private final ConcurrentHashMap<String, MarketTick> marketData = new ConcurrentHashMap<>();
     private final ObjectMapper mapper = new ObjectMapper();
     private Session session;
 
@@ -40,19 +50,21 @@ public class BinanceSocketClient {
             for (Map<String, Object> ticker : tickers) {
                 String symbol = (String) ticker.get("s");
                 String price = (String) ticker.get("c");
-                if (symbol != null && price != null) {
-                    latestPrices.put(symbol.toUpperCase(), price);
+                String volume = (String) ticker.get("v");
+
+                if (symbol != null && price != null && volume != null) {
+                    marketData.put(symbol.toUpperCase(), new MarketTick(price, volume));
                 }
             }
         } catch (Exception e) {
         }
     }
 
-    public String getPrice(String symbol) {
-        return latestPrices.getOrDefault(symbol.toUpperCase(), "0.00");
+    public MarketTick getMarketTick(String symbol) {
+        return marketData.getOrDefault(symbol.toUpperCase(), new MarketTick("0.00", "0.00"));
     }
 
-    public Map<String, String> getAllPrices() {
-        return latestPrices;
+    public Map<String, MarketTick> getAllMarketData() {
+        return marketData;
     }
 }
