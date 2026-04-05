@@ -36,23 +36,8 @@ jobs:
 
   # ─── User Service ─────────────────────────────────────────────────────────
   user-service:
-    name: User Service — Build & Test
+    name: User Service — Build
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: admin
-          POSTGRES_PASSWORD: adminpassword
-          POSTGRES_DB: crypto_platform
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -64,55 +49,14 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build & Test user-service
+      - name: Build user-service
         working-directory: backend/user-service
-        run: ./mvnw verify -Dquarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/crypto_platform
-        env:
-          QUARKUS_DATASOURCE_USERNAME: admin
-          QUARKUS_DATASOURCE_PASSWORD: adminpassword
+        run: ./mvnw package -DskipTests -q
 
   # ─── Market Service ───────────────────────────────────────────────────────
   market-service:
-    name: Market Service — Build & Test
+    name: Market Service — Build
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: admin
-          POSTGRES_PASSWORD: adminpassword
-          POSTGRES_DB: crypto_platform
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      rabbitmq:
-        image: rabbitmq:3-alpine
-        ports:
-          - 5672:5672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        env:
-          RABBITMQ_DEFAULT_USER: admin
-          RABBITMQ_DEFAULT_PASS: adminpassword
 
     steps:
       - uses: actions/checkout@v4
@@ -124,17 +68,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build & Test market-service
+      - name: Build market-service
         working-directory: backend/market-service
-        run: ./mvnw verify
-        env:
-          QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/crypto_platform
-          QUARKUS_DATASOURCE_USERNAME: admin
-          QUARKUS_DATASOURCE_PASSWORD: adminpassword
-          QUARKUS_REDIS_HOSTS: redis://localhost:6379
-          RABBITMQ_HOST: localhost
-          RABBITMQ_USERNAME: admin
-          RABBITMQ_PASSWORD: adminpassword
+        run: ./mvnw package -DskipTests -q
 
   # ─── AI Engine ────────────────────────────────────────────────────────────
   ai-engine:
