@@ -1,6 +1,6 @@
 // src/components/ChartGrid.tsx
 import { ChartCard } from './ChartCard';
-import { Coin, MarketDataMap, AiInsightsMap } from '../interfaces';
+import type { Coin, MarketDataMap, AiInsightsMap } from '../interfaces';
 
 interface Props {
   layout: 'SINGLE' | 'GRID';

@@ -1,5 +1,6 @@
 // src/components/Watchlist.tsx
-import { Coin, MarketDataMap, WATCHLIST_COINS } from '../interfaces';
+import type { Coin, MarketDataMap } from '../interfaces';
+import { WATCHLIST_COINS } from '../interfaces';
 
 interface Props {
   marketData: MarketDataMap;

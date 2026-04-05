@@ -1,4 +1,4 @@
-import { Newspaper, Zap, TrendingUp, TrendingDown } from 'lucide-react'
+import { Newspaper, Zap } from 'lucide-react'
 
 export default function NewsPanel({ newsDetails }: { newsDetails: any[] }) {
   return (

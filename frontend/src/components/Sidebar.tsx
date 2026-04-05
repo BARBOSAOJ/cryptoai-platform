@@ -1,15 +1,74 @@
-import { Zap, PieChart, Settings, LogOut } from 'lucide-react'
+import { useState } from 'react'
+import { LayoutDashboard, Activity, Layers, Settings, LogOut, TrendingUp } from 'lucide-react'
 
-export default function Sidebar({ activeTab, setActiveTab, onLogout }: any) {
+const NAV = [
+  { tab: 'TRADE',     icon: LayoutDashboard },
+  { tab: 'MEMES',     icon: Activity },
+  { tab: 'PORTFOLIO', icon: Layers },
+  { tab: 'CONFIG',    icon: Settings },
+] as const
+
+interface SidebarProps {
+  activeTab: string
+  setActiveTab: (tab: string) => void
+  onLogout: () => void
+}
+
+export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarProps) {
+  const [confirmLogout, setConfirmLogout] = useState(false)
+
+  const handleLogoutClick = () => {
+    if (confirmLogout) {
+      onLogout()
+    } else {
+      setConfirmLogout(true)
+      setTimeout(() => setConfirmLogout(false), 3000)
+    }
+  }
+
   return (
-    <nav style={{ width: '80px', background: '#161a1e', borderRight: '1px solid #2b3139', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0' }}>
-      <div style={{ color: '#FCD535', marginBottom: '40px' }}><Zap size={32} fill="#FCD535" /></div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '30px' }}>
-        <div onClick={() => setActiveTab('TRADE')} style={{ cursor: 'pointer', color: activeTab === 'TRADE' ? '#FCD535' : '#848e9c' }}><Zap size={24} /></div>
-        <div onClick={() => setActiveTab('MEMES')} style={{ cursor: 'pointer', color: activeTab === 'MEMES' ? '#FCD535' : '#848e9c' }}><PieChart size={24} /></div>
-        <div onClick={() => setActiveTab('CONFIG')} style={{ cursor: 'pointer', color: activeTab === 'CONFIG' ? '#FCD535' : '#848e9c' }}><Settings size={24} /></div>
+    <nav style={navStyle}>
+      <div style={brandStyle}>
+        <TrendingUp size={18} color="#000" strokeWidth={2.5} />
       </div>
-      <button onClick={onLogout} style={{ background: 'none', border: 'none', color: '#f23645', cursor: 'pointer' }}><LogOut size={24} /></button>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {NAV.map(({ tab, icon: Icon }) => (
+          <div key={tab} onClick={() => setActiveTab(tab)} style={navItemStyle(activeTab === tab)}>
+            <Icon size={18} strokeWidth={1.75} />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={handleLogoutClick}
+        style={{ ...logoutStyle, opacity: confirmLogout ? 1 : 0.5 }}
+        title={confirmLogout ? 'Haz clic de nuevo para confirmar' : 'Cerrar sesión'}
+      >
+        <LogOut size={17} strokeWidth={1.75} color={confirmLogout ? '#ff3b3b' : '#ff3b3b'} />
+      </button>
     </nav>
   )
+}
+
+const navStyle: React.CSSProperties = {
+  width: '62px', background: '#060606', borderRight: '1px solid #111',
+  display: 'flex', flexDirection: 'column', alignItems: 'center',
+  padding: '18px 0', gap: '4px'
+}
+const brandStyle: React.CSSProperties = {
+  width: '36px', height: '36px', background: '#fff', borderRadius: '10px',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px'
+}
+const navItemStyle = (active: boolean): React.CSSProperties => ({
+  width: '42px', height: '42px', borderRadius: '11px',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+  color: active ? '#fff' : '#2a2a2a',
+  background: active ? '#141414' : 'transparent',
+  border: active ? '1px solid #1e1e1e' : '1px solid transparent',
+  transition: 'all 0.15s'
+})
+const logoutStyle: React.CSSProperties = {
+  width: '42px', height: '42px', borderRadius: '11px',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'none', border: 'none', cursor: 'pointer',
+  marginTop: 'auto', transition: 'opacity 0.2s'
 }

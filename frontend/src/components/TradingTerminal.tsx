@@ -1,251 +1,387 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
-import { Clock, Cpu, Target, ShieldCheck, ChevronDown, ChevronUp, Settings2, AlertCircle, Newspaper, Zap, Play, BarChart3 } from 'lucide-react'
+import { useState } from 'react'
+import { apiClient } from '../api'
+import { ChevronDown, ChevronUp, ShieldCheck, Clock, Target, Play, BarChart3, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import ChartPanel from './ChartPanel'
 
-const NewsPanel = ({ news }: { news: any[] }) => (
-  <div style={{ width: '300px', background: '#0b0e11', borderLeft: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column' }}>
-    <div style={{ padding: '20px', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <Newspaper size={16} color="#FCD535" />
-      <span style={{ fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px' }}>REDES & NOTICIAS (EN VIVO)</span>
-    </div>
-    <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
-      {!news || news.length === 0 ? (
-        <div style={{ textAlign: 'center', color: '#444', fontSize: '11px', marginTop: '20px' }}>
-          <Zap size={20} style={{ marginBottom: '10px', opacity: 0.2 }} />
-          <p>Sin noticias recientes o falta API Key</p>
-        </div>
-      ) : (
-        news.map((item, i) => (
-          <div key={i} style={{ background: '#161a1e', padding: '12px', borderRadius: '8px', marginBottom: '12px', border: '1px solid #2b3139' }}>
-            {/* TÍTULO DE LA NOTICIA */}
-            <div style={{ fontSize: '11px', lineHeight: '1.4', marginBottom: '6px', color: '#e0e0e0' }}>
-              {item.title}
-            </div>
+interface TradingTerminalProps {
+  symbol: string
+  insight: any
+  history: any[]
+  user: { name: string; plan: string; balance: number }
+  onTradeExecuted?: (trade: any) => void
+}
 
-            {/* FUENTE (ej: twitter.com) */}
-            <div style={{ fontSize: '9px', color: '#848e9c', marginBottom: '8px', fontStyle: 'italic' }}>
-              Fuente: {item.source}
-            </div>
+export default function TradingTerminal({ symbol, insight, history = [], user, onTradeExecuted }: TradingTerminalProps) {
+  const [expanded, setExpanded]       = useState({ console: true, log: false, risk: true, auto: true })
+  const [riskParams, setRiskParams]   = useState({ risk: 1, entry: 0, stop: 0 })
+  const [calcResult, setCalcResult]   = useState({ size: 0, amount: 0 })
+  const [executing, setExecuting]     = useState(false)
+  const [execResult, setExecResult]   = useState<{ ok: boolean; msg: string } | null>(null)
+  const [showConfirm, setShowConfirm] = useState(false)
 
-            {/* ETIQUETAS DE LA IA */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{
-                fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '4px',
-                background: item.label === 'BULLISH' ? '#08998120' : item.label === 'BEARISH' ? '#f2364520' : '#2a2e39',
-                color: item.label === 'BULLISH' ? '#089981' : item.label === 'BEARISH' ? '#f23645' : '#848e9c'
-              }}>{item.label}</div>
-              <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#444' }}>IMPACTO: {item.impact}</div>
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  </div>
-)
+  const isBuy      = insight?.signal?.includes('COMPRAR') || insight?.signal?.includes('BUY')
+  const confidence = parseInt(insight?.confidence || '50')
+  const lstmActive = insight?.lstm_active ?? true
+  const toggle = (k: keyof typeof expanded) => setExpanded(p => ({ ...p, [k]: !p[k] }))
 
-export default function TradingTerminal({ symbol, insight, history = [], user }: any) {
-  const [expanded, setExpanded] = useState({
-    console: true,
-    log: false,
-    risk: true,
-    auto: true
-  })
-
-  const [riskParams, setRiskParams] = useState({ risk: 1, entry: 0, stop: 0 })
-  const [calcResult, setCalcResult] = useState({ size: 0, amount: 0 })
-
-  const isBuy = insight?.signal?.includes('COMPRAR')
-  const confidence = insight?.confidence || "50"
-
-  const toggleSection = (section: keyof typeof expanded) => {
-    setExpanded(prev => ({ ...prev, [section]: !prev[section] }))
-  }
-
-  const syncRiskCalculation = async (params: any) => {
+  const syncRisk = async (params: typeof riskParams) => {
     if (params.entry > 0 && params.stop > 0 && params.entry !== params.stop) {
       try {
-        const res = await axios.post('http://localhost:8081/risk/calculate', {
-          balance: user.balance,
-          riskPercentage: params.risk,
-          entryPrice: params.entry,
-          stopLoss: params.stop
+        const res = await apiClient.post('/risk/calculate', {
+          balance: user.balance, riskPercentage: params.risk,
+          entryPrice: params.entry, stopLoss: params.stop
         })
         setCalcResult({ size: res.data.positionSize, amount: res.data.riskAmount })
-      } catch (e) { }
+      } catch { /* error no crítico */ }
     }
   }
 
-  const handleInputChange = (field: string, value: number) => {
-    const newParams = { ...riskParams, [field]: value }
-    setRiskParams(newParams)
-    syncRiskCalculation(newParams)
+  const handleInput = (field: string, value: string) => {
+    const num = parseFloat(value)
+    const p = { ...riskParams, [field]: isNaN(num) ? 0 : num }
+    setRiskParams(p)
+    syncRisk(p)
+  }
+
+  const initiateOrder = () => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setExecResult({ ok: false, msg: 'No autenticado. Inicia sesión de nuevo.' })
+      return
+    }
+    if (riskParams.entry <= 0) {
+      setExecResult({ ok: false, msg: 'Introduce un precio de entrada en Gestión de riesgo.' })
+      setTimeout(() => setExecResult(null), 4000)
+      return
+    }
+    setShowConfirm(true)
+  }
+
+  const executeOrder = async () => {
+    setShowConfirm(false)
+    const currentPrice = riskParams.entry
+    const size = calcResult.size > 0 ? calcResult.size : 0.001
+
+    setExecuting(true)
+    setExecResult(null)
+    try {
+      const res = await apiClient.post('/portfolio/execute', {
+        symbol,
+        size,
+        price: currentPrice,
+        type:       'BUY',
+        signal:     insight?.signal     || 'COMPRAR',
+        confidence: insight?.confidence || `${confidence}%`
+      })
+
+      setExecResult({ ok: true, msg: `Orden #${res.data.tradeId} ejecutada correctamente` })
+
+      onTradeExecuted?.({
+        id:         res.data.tradeId || Date.now(),
+        symbol,
+        price:      currentPrice,
+        signal:     insight?.signal,
+        confidence: insight?.confidence,
+        timestamp:  new Date().toISOString()
+      })
+
+      setTimeout(() => setExecResult(null), 5000)
+    } catch (e: any) {
+      // El interceptor de axios gestiona el 401 global (logout automático)
+      const msg = e.response?.status === 401
+        ? 'Sesión expirada. Vuelve a iniciar sesión.'
+        : e.response?.status === 400
+          ? (e.response.data?.error || 'Parámetros de orden inválidos.')
+          : e.code === 'ECONNABORTED'
+            ? 'Tiempo de espera agotado. Verifica que el servidor está activo.'
+            : 'Error al ejecutar la orden. Verifica que el servidor está activo.'
+      setExecResult({ ok: false, msg })
+      setTimeout(() => setExecResult(null), 5000)
+    } finally {
+      setExecuting(false)
+    }
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', background: '#080808', width: '100%' }}>
-      <div style={{ flex: 1, position: 'relative', borderRight: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1 }}>
-          <iframe
-            title={symbol}
-            src={`https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A${symbol}&interval=1&theme=dark&style=1`}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-          />
-        </div>
+    <div style={{ display: 'flex', height: '100%', background: '#000', width: '100%' }}>
 
-        <div style={aiBadgeStyle(isBuy)}>
-          <div style={{ fontSize: '10px', color: '#848e9c', fontWeight: 'bold' }}>ESTADO IA</div>
-          <div style={{ fontSize: '16px', fontWeight: '800', color: isBuy ? '#089981' : '#fff' }}>
-            {isBuy ? 'OPORTUNIDAD DETECTADA' : 'MONITORIZANDO'}
-          </div>
-        </div>
+      {/* CHART */}
+      <div style={{ flex: 1, borderRight: '1px solid #111', overflow: 'hidden' }}>
+        <ChartPanel symbol={symbol} insight={insight} />
       </div>
 
-      <aside style={{ width: '320px', background: '#0b0e11', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1a1a1a', overflowY: 'auto' }}>
+      {/* SIDE PANEL */}
+      <aside style={asideStyle}>
 
-        <div style={sectionWrapperStyle}>
-          <div onClick={() => toggleSection('console')} style={headerActionStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#FCD535' }}>
-              <Cpu size={16} />
-              <span style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '1px' }}>AI CONSOLE</span>
-            </div>
-            {expanded.console ? <ChevronUp size={14} color="#444" /> : <ChevronDown size={14} color="#444" />}
+        {/* AI CONSOLE */}
+        <div style={sectionStyle}>
+          <div onClick={() => toggle('console')} style={sectionHeaderStyle}>
+            <span style={sectionTitleStyle}>Análisis IA</span>
+            {expanded.console ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
           </div>
           {expanded.console && (
-            <div style={{ padding: '0 20px 20px 20px' }}>
-              <div style={confidenceCardStyle}>
-                <div style={{ fontSize: '10px', color: '#848e9c', marginBottom: '10px' }}>PRECISIÓN COMBINADA</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                  <div style={{ fontSize: '18px', fontWeight: '900', color: isBuy ? '#089981' : '#fff' }}>{insight?.signal || 'ESCANEO'}</div>
-                  <div style={{ fontSize: '12px', color: '#848e9c' }}>{confidence}%</div>
+            <div style={{ padding: '0 16px 16px' }}>
+              {!lstmActive && (
+                <div style={warningBannerStyle}>
+                  <AlertTriangle size={11} color="#f59e0b" strokeWidth={2} />
+                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#f59e0b', marginLeft: '5px' }}>
+                    Solo sentimiento — LSTM no disponible
+                  </span>
                 </div>
-                <div style={{ width: '100%', height: '4px', background: '#2b3139', borderRadius: '2px', marginTop: '10px' }}>
-                  <div style={{ width: `${confidence}%`, height: '100%', background: isBuy ? '#089981' : '#FCD535', borderRadius: '2px', transition: '1s' }}></div>
+              )}
+              <div style={aiCardStyle(isBuy)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#333', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                    Señal combinada
+                  </span>
+                  <span style={badgeStyle(isBuy)}>{isBuy ? 'Comprar' : 'Monitorizar'}</span>
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.5px', marginBottom: '3px' }}>
+                  {insight?.signal || 'Escaneando'}
+                </div>
+                <div style={{ fontSize: '10px', color: '#333', fontFamily: 'JetBrains Mono, monospace', marginBottom: '12px' }}>
+                  {lstmActive ? 'LSTM + FinBERT' : 'FinBERT'} · {confidence}% confianza
+                </div>
+                <div style={{ height: '2px', background: '#111', borderRadius: '1px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${confidence}%`, background: isBuy ? '#00d060' : '#fff', borderRadius: '1px', transition: '1s' }} />
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        <div style={sectionWrapperStyle}>
-          <div onClick={() => toggleSection('log')} style={headerActionStyle}>
+        {/* LOG */}
+        <div style={sectionStyle}>
+          <div onClick={() => toggle('log')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={14} color="#848e9c" />
-              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#848e9c' }}>LOG DE OPERACIONES</span>
+              <Clock size={13} color="#222" strokeWidth={1.75} />
+              <span style={sectionTitleStyle}>Historial</span>
             </div>
-            {expanded.log ? <ChevronUp size={14} color="#444" /> : <ChevronDown size={14} color="#444" />}
+            {expanded.log ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
           </div>
           {expanded.log && (
-            <div style={{ padding: '0 20px 20px 20px', maxHeight: '200px', overflowY: 'auto' }}>
-              {history?.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#444', fontSize: '11px' }}>Esperando señales...</div>
-              ) : (
-                history.map((h: any) => (
-                  <div key={h.id} style={logItemStyle}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '11px', fontWeight: 'bold' }}>{h.symbol} • <span style={{ color: '#089981' }}>LONG</span></div>
-                      <div style={{ fontSize: '10px', color: '#848e9c' }}>${h.price}</div>
-                    </div>
+            <div style={{ padding: '0 16px 16px', maxHeight: '180px', overflowY: 'auto' }}>
+              {history.length === 0 ? (
+                <div style={{ fontSize: '11px', color: '#222', textAlign: 'center', padding: '12px 0', fontFamily: 'JetBrains Mono, monospace' }}>
+                  Sin señales aún
+                </div>
+              ) : history.map((h: any) => (
+                <div key={h.id} style={logItemStyle}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>
+                    {h.symbol} <span style={{ color: '#00d060' }}>· {h.signal}</span>
                   </div>
-                ))
-              )}
+                  <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
+                    ${parseFloat(h.price).toLocaleString()} · {h.confidence}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        <div style={sectionWrapperStyle}>
-          <div onClick={() => toggleSection('risk')} style={headerActionStyle}>
+        {/* RISK */}
+        <div style={sectionStyle}>
+          <div onClick={() => toggle('risk')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Settings2 size={14} color="#848e9c" />
-              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#848e9c' }}>GESTIÓN DE RIESGO</span>
+              <Target size={13} color="#222" strokeWidth={1.75} />
+              <span style={sectionTitleStyle}>Gestión de riesgo</span>
             </div>
-            {expanded.risk ? <ChevronUp size={14} color="#444" /> : <ChevronDown size={14} color="#444" />}
+            {expanded.risk ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
           </div>
           {expanded.risk && (
-            <div style={{ padding: '0 20px 20px 20px' }}>
-              <div style={toolCardStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '11px', fontWeight: 'bold' }}>
-                  <Target size={14} color="#FCD535" /> CALCULADORA (AUTO)
+            <div style={{ padding: '0 16px 16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                <input
+                  type="number" placeholder="Entrada $" min="0" step="any"
+                  onChange={e => handleInput('entry', e.target.value)}
+                  style={riskInputStyle}
+                />
+                <input
+                  type="number" placeholder="Stop loss $" min="0" step="any"
+                  onChange={e => handleInput('stop', e.target.value)}
+                  style={riskInputStyle}
+                />
+              </div>
+              <div style={riskResultStyle}>
+                <div style={{ fontSize: '9px', color: '#333', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Tamaño recomendado
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <input type="number" placeholder="Entrada" onChange={(e) => handleInputChange('entry', parseFloat(e.target.value))} style={toolInputStyle} />
-                  <input type="number" placeholder="Stop" onChange={(e) => handleInputChange('stop', parseFloat(e.target.value))} style={toolInputStyle} />
-                </div>
-                <div style={{ marginTop: '12px', background: '#0b0e11', padding: '10px', borderRadius: '8px', border: '1px solid #2b3139' }}>
-                  <div style={{ fontSize: '10px', color: '#848e9c' }}>TAMAÑO RECOMENDADO</div>
-                  <div style={{ fontSize: '18px', fontWeight: '900', color: '#fff' }}>
-                    {calcResult.size.toFixed(4)} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>{symbol.replace('USDT', '')}</span>
-                  </div>
+                <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px' }}>
+                  {calcResult.size.toFixed(4)}<span style={{ fontSize: '11px', color: '#333', fontWeight: 400, marginLeft: '4px' }}>{symbol.replace('USDT', '')}</span>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        <div style={sectionWrapperStyle}>
-          <div onClick={() => toggleSection('auto')} style={headerActionStyle}>
+        {/* AUTO-TRADE */}
+        <div style={sectionStyle}>
+          <div onClick={() => toggle('auto')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Play size={14} color="#089981" />
-              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#848e9c' }}>AUTO-TRADE (SIMULADO)</span>
+              <Play size={13} color="#222" strokeWidth={1.75} />
+              <span style={sectionTitleStyle}>Auto-trade</span>
             </div>
-            {expanded.auto ? <ChevronUp size={14} color="#444" /> : <ChevronDown size={14} color="#444" />}
+            {expanded.auto ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
           </div>
           {expanded.auto && (
-            <div style={{ padding: '0 20px 20px 20px' }}>
-              <div style={{ ...toolCardStyle, borderColor: isBuy ? '#08998140' : '#2b3139' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <div style={{ fontSize: '10px', color: '#848e9c' }}>ESTRATEGIA IA ACTIVA</div>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#089981', boxShadow: '0 0 8px #089981' }}></div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '9px', color: '#444', marginBottom: '2px' }}>PROY. GANANCIA</div>
-                    <div style={{ fontSize: '16px', fontWeight: '900', color: '#089981' }}>+${(user.balance * (parseInt(confidence)/1000)).toFixed(2)}</div>
+            <div style={{ padding: '0 16px 16px' }}>
+              <div style={{ ...riskResultStyle, borderColor: isBuy ? 'rgba(0,208,96,0.2)' : '#111' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '10px', color: '#333' }}>Estrategia IA</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00d060' }} />
+                    <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#00d060' }}>Activa</span>
                   </div>
-                  <BarChart3 size={24} color="#2b3139" />
                 </div>
-                <button style={autoTradeButtonStyle(isBuy)}>
-                  {isBuy ? 'EJECUTAR ORDEN IA' : 'ESPERANDO SEÑAL'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '9px', color: '#222', fontFamily: 'JetBrains Mono, monospace', marginBottom: '4px' }}>Proyección</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#00d060', letterSpacing: '-0.5px' }}>
+                      +${(user.balance * (confidence / 1000)).toFixed(2)}
+                    </div>
+                  </div>
+                  <BarChart3 size={20} color="#111" />
+                </div>
+
+                {/* Feedback de ejecución */}
+                {execResult && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px',
+                    padding: '8px 10px', borderRadius: '7px',
+                    background: execResult.ok ? 'rgba(0,208,96,0.07)' : 'rgba(255,59,59,0.07)',
+                    border: `1px solid ${execResult.ok ? 'rgba(0,208,96,0.15)' : 'rgba(255,59,59,0.15)'}`
+                  }}>
+                    {execResult.ok
+                      ? <CheckCircle size={12} color="#00d060" strokeWidth={1.75} />
+                      : <XCircle size={12} color="#ff3b3b" strokeWidth={1.75} />}
+                    <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: execResult.ok ? '#00d060' : '#ff3b3b' }}>
+                      {execResult.msg}
+                    </span>
+                  </div>
+                )}
+
+                {/* Confirmación de orden */}
+                {showConfirm ? (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setShowConfirm(false)} style={cancelBtnStyle}>
+                      Cancelar
+                    </button>
+                    <button onClick={executeOrder} style={confirmBtnStyle}>
+                      Confirmar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    style={execBtnStyle(isBuy && !executing)}
+                    disabled={!isBuy || executing}
+                    onClick={initiateOrder}
+                  >
+                    {executing ? 'Procesando...' : isBuy ? 'Ejecutar orden' : 'Esperando señal'}
+                  </button>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        <div style={{ padding: '20px', borderTop: '1px solid #1a1a1a', marginTop: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', color: '#089981' }}>
-            <ShieldCheck size={14} /> RSA-2048 SECURITY ON
+        {/* NOTICIAS */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #0e0e0e' }}>
+            <span style={sectionTitleStyle}>Noticias en vivo</span>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+            {!insight?.news_details?.length ? (
+              <div style={{ fontSize: '10px', color: '#222', fontFamily: 'JetBrains Mono, monospace', padding: '12px 0', textAlign: 'center' }}>
+                Sin noticias disponibles
+              </div>
+            ) : insight.news_details.map((item: any, i: number) => (
+              <div key={i} style={newsItemStyle}>
+                <div style={{ fontSize: '11px', color: '#888', lineHeight: 1.5, marginBottom: '6px' }}>{item.title}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#222' }}>{item.source}</span>
+                  <span style={newsBadgeStyle(item.label)}>{item.label}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </aside>
 
-      <NewsPanel news={insight?.news_details || []} />
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #0e0e0e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <ShieldCheck size={12} color="#00d060" strokeWidth={1.75} />
+          <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1a1a1a', letterSpacing: '1px' }}>RSA-2048 ACTIVO</span>
+        </div>
+      </aside>
     </div>
   )
 }
 
-const aiBadgeStyle = (isBuy: boolean) => ({
-  position: 'absolute' as const, bottom: '30px', left: '30px',
-  background: 'rgba(11, 14, 17, 0.85)', backdropFilter: 'blur(10px)',
-  padding: '16px 24px', borderRadius: '16px',
-  border: `1px solid ${isBuy ? '#089981' : '#2b3139'}`, zIndex: 10
+const asideStyle: React.CSSProperties = {
+  width: '300px', background: '#060606', display: 'flex', flexDirection: 'column',
+  borderLeft: '1px solid #111', overflowY: 'auto'
+}
+const sectionStyle: React.CSSProperties = { borderBottom: '1px solid #0e0e0e' }
+const sectionHeaderStyle: React.CSSProperties = {
+  padding: '12px 16px', display: 'flex', justifyContent: 'space-between',
+  alignItems: 'center', cursor: 'pointer'
+}
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: '11px', fontWeight: 600, color: '#333', letterSpacing: '0.3px'
+}
+const aiCardStyle = (isBuy: boolean): React.CSSProperties => ({
+  background: '#0a0a0a', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.15)' : '#111'}`,
+  borderRadius: '12px', padding: '14px'
 })
-
-const sectionWrapperStyle = { borderBottom: '1px solid #1a1a1a' }
-const headerActionStyle = { padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }
-const confidenceCardStyle = { background: '#161a1e', padding: '15px', borderRadius: '12px', border: '1px solid #2b3139' }
-const logItemStyle = { display: 'flex', gap: '12px', marginBottom: '16px', borderLeft: '2px solid #2b3139', paddingLeft: '12px' }
-const toolCardStyle = { background: '#161a1e', border: '1px solid #2b3139', padding: '15px', borderRadius: '10px' }
-const toolInputStyle = { background: '#0b0e11', border: '1px solid #2b3139', color: 'white', padding: '8px', borderRadius: '6px', fontSize: '11px', width: '100%', outline: 'none', marginBottom: '5px' }
-
-const autoTradeButtonStyle = (active: boolean) => ({
-  width: '100%',
-  padding: '10px',
-  borderRadius: '8px',
-  border: 'none',
-  background: active ? '#089981' : '#2b3139',
-  color: active ? 'white' : '#444',
-  fontSize: '11px',
-  fontWeight: 'bold',
-  cursor: active ? 'pointer' : 'not-allowed',
-  transition: '0.3s'
+const badgeStyle = (isBuy: boolean): React.CSSProperties => ({
+  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
+  color: isBuy ? '#00d060' : '#333',
+  background: isBuy ? 'rgba(0,208,96,0.08)' : '#111',
+  border: `1px solid ${isBuy ? 'rgba(0,208,96,0.18)' : '#1a1a1a'}`,
+  padding: '3px 8px', borderRadius: '5px', letterSpacing: '0.5px'
 })
+const warningBannerStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.07)',
+  border: '1px solid rgba(245,158,11,0.2)', borderRadius: '7px',
+  padding: '6px 10px', marginBottom: '8px'
+}
+const logItemStyle: React.CSSProperties = {
+  borderLeft: '2px solid #111', paddingLeft: '10px', marginBottom: '12px'
+}
+const riskInputStyle: React.CSSProperties = {
+  background: '#0a0a0a', border: '1px solid #1a1a1a', color: '#fff',
+  padding: '9px 10px', borderRadius: '8px', fontSize: '11px',
+  fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%'
+}
+const riskResultStyle: React.CSSProperties = {
+  background: '#0a0a0a', border: '1px solid #111', borderRadius: '10px', padding: '12px'
+}
+const execBtnStyle = (active: boolean): React.CSSProperties => ({
+  width: '100%', padding: '10px', borderRadius: '8px', border: 'none',
+  background: active ? '#00d060' : '#0a0a0a',
+  color: active ? '#000' : '#222',
+  fontSize: '11px', fontWeight: 600, cursor: active ? 'pointer' : 'not-allowed',
+  fontFamily: 'Inter, sans-serif', transition: 'all 0.2s', letterSpacing: '0.3px'
+})
+const cancelBtnStyle: React.CSSProperties = {
+  flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #1a1a1a',
+  background: '#0a0a0a', color: '#555', fontSize: '11px', fontWeight: 600,
+  cursor: 'pointer', fontFamily: 'Inter, sans-serif'
+}
+const confirmBtnStyle: React.CSSProperties = {
+  flex: 1, padding: '9px', borderRadius: '8px', border: 'none',
+  background: '#00d060', color: '#000', fontSize: '11px', fontWeight: 600,
+  cursor: 'pointer', fontFamily: 'Inter, sans-serif'
+}
+const newsItemStyle: React.CSSProperties = {
+  padding: '10px 0', borderBottom: '1px solid #0a0a0a'
+}
+const newsBadgeStyle = (label: string): React.CSSProperties => {
+  const bull = label === 'BULLISH'
+  const bear = label === 'BEARISH'
+  return {
+    fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px',
+    padding: '2px 7px', borderRadius: '4px',
+    color: bull ? '#00d060' : bear ? '#ff3b3b' : '#333',
+    background: bull ? 'rgba(0,208,96,0.07)' : bear ? 'rgba(255,59,59,0.07)' : '#0a0a0a',
+    border: `1px solid ${bull ? 'rgba(0,208,96,0.15)' : bear ? 'rgba(255,59,59,0.15)' : '#111'}`
+  }
+}

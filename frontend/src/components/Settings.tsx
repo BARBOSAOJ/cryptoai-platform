@@ -1,45 +1,124 @@
-import { Zap, Shield, Database } from 'lucide-react'
+import { Zap, Shield, Database, Brain, Cpu, CheckCircle, XCircle } from 'lucide-react'
 
-export default function Settings({ setRefreshInterval, currentInterval }: any) {
-  const handleChange = (e: any) => {
-    const value = parseInt(e.target.value);
-    setRefreshInterval(value);
-  };
+interface SettingsProps {
+  setRefreshInterval: (v: number) => void
+  currentInterval: number
+  aiHealth?: { lstm: boolean; finbert: boolean } | null
+}
 
+export default function Settings({ setRefreshInterval, currentInterval, aiHealth }: SettingsProps) {
   return (
-    <div style={{ padding: '50px', maxWidth: '800px' }}>
-      <h2 style={{ marginBottom: '40px', fontWeight: '900', letterSpacing: '1px' }}>AJUSTES DEL TERMINAL</h2>
+    <div style={wrapStyle}>
+      <div style={{ marginBottom: '28px' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 4px' }}>Configuración</h2>
+        <p style={{ fontSize: '12px', color: '#333', margin: 0 }}>Ajustes del terminal de trading</p>
+      </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <section style={configBox}>
-          <Zap size={24} color="#FCD535" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '560px' }}>
+
+        {/* Motor IA */}
+        <div style={sectionLabelStyle}>Motor IA</div>
+
+        <div style={rowStyle}>
+          <div style={iconWrapStyle}><Zap size={16} strokeWidth={1.75} color="#fff" /></div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 'bold' }}>Agresividad del Algoritmo</div>
-            <div style={{ fontSize: '12px', color: '#848e9c' }}>Define la velocidad de escaneo de la red neuronal.</div>
+            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Velocidad de escaneo</div>
+            <div style={{ fontSize: '11px', color: '#333' }}>Frecuencia de análisis de la red neuronal</div>
           </div>
-          <select
-            value={currentInterval}
-            onChange={handleChange}
-            style={inputStyle}
-          >
-            <option value={5000}>Conservador (5s)</option>
-            <option value={3000}>Moderado (3s)</option>
-            <option value={1000}>Agresivo (1s)</option>
+          <select value={currentInterval} onChange={e => setRefreshInterval(parseInt(e.target.value))} style={selectStyle}>
+            <option value={5000}>Conservador · 5s</option>
+            <option value={3000}>Moderado · 3s</option>
+            <option value={1000}>Agresivo · 1s</option>
           </select>
-        </section>
+        </div>
 
-        <section style={configBox}>
-          <Shield size={24} color="#089981" />
+        {/* Estado de modelos IA */}
+        <div style={rowStyle}>
+          <div style={{ ...iconWrapStyle, background: '#0a0a1a' }}><Brain size={16} strokeWidth={1.75} color="#818cf8" /></div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 'bold' }}>Seguridad Institucional</div>
-            <div style={{ fontSize: '12px', color: '#848e9c' }}>Encriptación RSA-2048 activa para todas las peticiones.</div>
+            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Estado modelos IA</div>
+            <div style={{ fontSize: '11px', color: '#333' }}>LSTM (predicción técnica) + FinBERT (sentimiento)</div>
           </div>
-          <div style={{ color: '#089981', fontSize: '12px', fontWeight: 'bold' }}>ACTIVO</div>
-        </section>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <ModelBadge label="LSTM"    active={aiHealth?.lstm    ?? null} />
+            <ModelBadge label="FinBERT" active={aiHealth?.finbert ?? null} />
+          </div>
+        </div>
+
+        <div style={{ marginTop: '8px' }} />
+        <div style={sectionLabelStyle}>Sistema</div>
+
+        <div style={rowStyle}>
+          <div style={{ ...iconWrapStyle, background: '#0a1a0a' }}><Shield size={16} strokeWidth={1.75} color="#00d060" /></div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Seguridad</div>
+            <div style={{ fontSize: '11px', color: '#333' }}>Encriptación RSA-2048 activa</div>
+          </div>
+          <span style={activeBadgeStyle}>Activo</span>
+        </div>
+
+        <div style={rowStyle}>
+          <div style={{ ...iconWrapStyle, background: '#0a0a1a' }}><Cpu size={16} strokeWidth={1.75} color="#818cf8" /></div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Fuente de datos</div>
+            <div style={{ fontSize: '11px', color: '#333' }}>Binance WebSocket · Tiempo real</div>
+          </div>
+          <span style={activeBadgeStyle}>Activo</span>
+        </div>
+
+        <div style={rowStyle}>
+          <div style={{ ...iconWrapStyle, background: '#0a1010' }}><Database size={16} strokeWidth={1.75} color="#2dd4bf" /></div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Persistencia</div>
+            <div style={{ fontSize: '11px', color: '#333' }}>PostgreSQL · Trades almacenados en base de datos</div>
+          </div>
+          <span style={activeBadgeStyle}>Activo</span>
+        </div>
+
       </div>
     </div>
   )
 }
 
-const configBox = { background: '#0b0e11', padding: '25px', borderRadius: '16px', border: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '25px' }
-const inputStyle = { background: '#161a1e', border: '1px solid #2b3139', color: '#fff', padding: '10px', borderRadius: '8px', cursor: 'pointer' }
+function ModelBadge({ label, active }: { label: string; active: boolean | null }) {
+  const color = active === null ? '#333' : active ? '#00d060' : '#ff3b3b'
+  const bg    = active === null ? '#0a0a0a' : active ? 'rgba(0,208,96,0.08)' : 'rgba(255,59,59,0.08)'
+  const border = active === null ? '#1a1a1a' : active ? 'rgba(0,208,96,0.2)' : 'rgba(255,59,59,0.2)'
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color, background: bg, border: `1px solid ${border}`, padding: '4px 8px', borderRadius: '6px' }}>
+      {active === null
+        ? '—'
+        : active
+          ? <CheckCircle size={10} color="#00d060" strokeWidth={2} />
+          : <XCircle size={10} color="#ff3b3b" strokeWidth={2} />}
+      {label}
+    </span>
+  )
+}
+
+const wrapStyle: React.CSSProperties = {
+  padding: '32px 36px', background: '#000', height: '100%',
+  overflowY: 'auto', fontFamily: 'Inter, sans-serif', color: '#fff'
+}
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#222',
+  letterSpacing: '2px', textTransform: 'uppercase', padding: '0 4px', marginBottom: '4px'
+}
+const rowStyle: React.CSSProperties = {
+  background: '#080808', border: '1px solid #111', borderRadius: '12px',
+  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px'
+}
+const iconWrapStyle: React.CSSProperties = {
+  width: '34px', height: '34px', background: '#111', borderRadius: '9px',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+}
+const selectStyle: React.CSSProperties = {
+  background: '#111', border: '1px solid #1a1a1a', color: '#fff',
+  padding: '7px 10px', borderRadius: '8px', fontSize: '11px',
+  fontFamily: 'Inter, sans-serif', cursor: 'pointer', outline: 'none'
+}
+const activeBadgeStyle: React.CSSProperties = {
+  fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#00d060',
+  background: 'rgba(0,208,96,0.08)', border: '1px solid rgba(0,208,96,0.15)',
+  padding: '4px 9px', borderRadius: '6px'
+}

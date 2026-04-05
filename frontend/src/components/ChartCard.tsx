@@ -1,6 +1,6 @@
 // src/components/ChartCard.tsx
 import { Cpu } from 'lucide-react';
-import { Coin, AiAnalysis } from '../interfaces';
+import type { Coin, AiAnalysis } from '../interfaces';
 
 interface Props {
   coin: Coin;

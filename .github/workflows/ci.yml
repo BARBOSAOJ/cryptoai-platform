@@ -1,0 +1,160 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # ─── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend — Lint & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  # ─── User Service ─────────────────────────────────────────────────────────
+  user-service:
+    name: User Service — Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: crypto_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & Test user-service
+        working-directory: backend/user-service
+        run: ./mvnw verify -Dquarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/crypto_platform
+        env:
+          QUARKUS_DATASOURCE_USERNAME: admin
+          QUARKUS_DATASOURCE_PASSWORD: adminpassword
+
+  # ─── Market Service ───────────────────────────────────────────────────────
+  market-service:
+    name: Market Service — Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: crypto_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:3-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        env:
+          RABBITMQ_DEFAULT_USER: admin
+          RABBITMQ_DEFAULT_PASS: adminpassword
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & Test market-service
+        working-directory: backend/market-service
+        run: ./mvnw verify
+        env:
+          QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/crypto_platform
+          QUARKUS_DATASOURCE_USERNAME: admin
+          QUARKUS_DATASOURCE_PASSWORD: adminpassword
+          QUARKUS_REDIS_HOSTS: redis://localhost:6379
+          RABBITMQ_HOST: localhost
+          RABBITMQ_USERNAME: admin
+          RABBITMQ_PASSWORD: adminpassword
+
+  # ─── AI Engine ────────────────────────────────────────────────────────────
+  ai-engine:
+    name: AI Engine — Lint & Import check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-engine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install fastapi uvicorn pydantic requests redis python-dotenv
+
+      - name: Syntax check
+        run: python -m py_compile main.py && echo "Syntax OK"

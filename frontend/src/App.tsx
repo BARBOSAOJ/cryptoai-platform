@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { apiClient, aiClient, API_PRICE } from './api'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import TradingTerminal from './components/TradingTerminal'
@@ -9,93 +9,252 @@ import Settings from './components/Settings'
 import Login from './components/Login'
 import LoadingSplash from './components/LoadingSplash'
 
+const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
+
 export default function App() {
-  const [loading, setLoading] = useState(true)
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'))
-  const [activeTab, setActiveTab] = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'>('TRADE')
+  const [loading, setLoading]         = useState(true)
+  const [isLoggedIn, setIsLoggedIn]   = useState(() => !!localStorage.getItem('token'))
+  const [activeTab, setActiveTab]     = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'>('TRADE')
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState({
-    name: localStorage.getItem('userName') || '',
-    plan: 'PRO ELITE',
-    balance: 12500.50
+    name:    localStorage.getItem('userName') || '',
+    plan:    localStorage.getItem('userPlan') || 'PRO ELITE',
+    balance: parseFloat(localStorage.getItem('userBalance') || '12500.50')
   })
 
-  const [marketData, setMarketData] = useState<Record<string, any>>({})
-  const [aiInsights, setAiInsights] = useState<Record<string, any>>({})
+  const [marketData, setMarketData]   = useState<Record<string, any>>({})
+  const [aiInsights, setAiInsights]   = useState<Record<string, any>>({})
   const [tradeHistory, setTradeHistory] = useState<any[]>([])
   const [refreshInterval, setRefreshInterval] = useState(3000)
-  const [alertFlash, setAlertFlash] = useState(false)
+  const [alertFlash, setAlertFlash]   = useState(false)
+  const [sseConnected, setSseConnected] = useState(false)
+  const [aiHealth, setAiHealth]       = useState<{ lstm: boolean; finbert: boolean } | null>(null)
+  const [portfolioVersion, setPortfolioVersion] = useState(0)
 
+  const historyRef     = useRef<Record<string, number[]>>({})
+  const volumesRef     = useRef<Record<string, number[]>>({})
+  const currentSymRef  = useRef(currentSymbol)
+  const aiCooldownRef  = useRef<Record<string, number>>({})
+  const reconnectCount = useRef(0)
+
+  useEffect(() => { currentSymRef.current = currentSymbol }, [currentSymbol])
+
+  // Splash screen
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 1500)
-    return () => clearTimeout(timer)
+    const t = setTimeout(() => setLoading(false), 1500)
+    return () => clearTimeout(t)
   }, [])
 
-  const fetchData = async (symbol: string) => {
-    try {
-      const resPrice = await axios.get(`http://localhost:8081/prices/${symbol}`)
-      const rawData = resPrice.data
+  // Escuchar evento de sesión expirada del interceptor de axios
+  useEffect(() => {
+    const handler = () => handleLogout()
+    window.addEventListener('session-expired', handler)
+    return () => window.removeEventListener('session-expired', handler)
+  }, [])
 
-      const price = parseFloat(rawData.price)
-      const volume = parseFloat(rawData.volume)
-
-      if (!isNaN(price) && price > 0) {
-        let currentHistory: number[] = []
-        let currentVolumes: number[] = []
-
-        setMarketData(prev => {
-          const oldEntry = prev[symbol] || { price: 0, history: [], volumes: [], change: "0%" }
-          const newHistory = [...oldEntry.history, price].slice(-65)
-          const newVolumes = [...(oldEntry.volumes || []), volume].slice(-65)
-
-          currentHistory = newHistory
-          currentVolumes = newVolumes
-
-          return {
-            ...prev,
-            [symbol]: { price, history: newHistory, volumes: newVolumes, change: "+2.5%" }
-          }
-        })
-
-        const resAi = await axios.post('http://localhost:8002/analyze', {
-          symbol,
-          price,
-          history: currentHistory,
-          volumes: currentVolumes
-        })
-
-        setAiInsights(prev => ({ ...prev, [symbol]: resAi.data }))
-      }
-    } catch (e) { }
-  }
-
+  // Verificar salud del AI engine al iniciar sesión
   useEffect(() => {
     if (!isLoggedIn || loading) return
-    const mainCoins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "TRUMPUSDT", "PEPEUSDT", "DOGEUSDT", "SHIBUSDT"]
-    const allSymbols = Array.from(new Set([currentSymbol, ...mainCoins]))
-    const int = setInterval(() => {
-      allSymbols.forEach(s => fetchData(s))
-    }, refreshInterval)
-    return () => clearInterval(int)
-  }, [currentSymbol, isLoggedIn, loading, refreshInterval])
+    aiClient.get('/health')
+      .then(res => setAiHealth({ lstm: res.data.lstm, finbert: res.data.finbert }))
+      .catch(() => setAiHealth({ lstm: false, finbert: false }))
+  }, [isLoggedIn, loading])
 
-  if (loading) return <LoadingSplash />
-  if (!isLoggedIn) return <Login onLoginSuccess={() => setIsLoggedIn(true)} />
+  // ─── Lógica AI ─────────────────────────────────────────────────────────────
+  const fetchAiInsight = useCallback(async (symbol: string, price: number) => {
+    const now = Date.now()
+    const lastCall = aiCooldownRef.current[symbol] || 0
+    if (now - lastCall < 8000) return
+
+    aiCooldownRef.current[symbol] = now
+
+    const history = historyRef.current[symbol] || []
+    const volumes = volumesRef.current[symbol] || []
+    if (history.length < 5) return
+
+    try {
+      const res = await aiClient.post('/analyze', { symbol, price, history, volumes })
+      const insight = res.data
+
+      setAiInsights(prev => ({ ...prev, [symbol]: insight }))
+
+      if (symbol === currentSymRef.current && insight?.signal?.includes('COMPRAR')) {
+        setAlertFlash(true)
+        setTimeout(() => setAlertFlash(false), 2000)
+
+        setTradeHistory(prev => [{
+          id:         Date.now(),
+          symbol,
+          price,
+          signal:     insight.signal,
+          confidence: insight.confidence,
+          timestamp:  new Date().toISOString()
+        }, ...prev].slice(0, 50))
+      }
+    } catch (e: any) {
+      if (import.meta.env.DEV) console.error(`[AI] ${symbol}:`, e?.message)
+    }
+  }, [])
+
+  // ─── SSE para precios en tiempo real ────────────────────────────────────────
+  useEffect(() => {
+    if (!isLoggedIn || loading) return
+
+    let es: EventSource | null = null
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+    let destroyed = false
+
+    const processTickBatch = (rawData: Record<string, { price: string; volume: string }>) => {
+      setMarketData(prev => {
+        const updated = { ...prev }
+        const watchedSymbols = new Set([currentSymRef.current, ...MAIN_COINS])
+
+        for (const [symbol, tick] of Object.entries(rawData)) {
+          if (!tick?.price) continue
+          const price = parseFloat(tick.price)
+          if (isNaN(price) || price <= 0) continue
+
+          const prevHistory = historyRef.current[symbol] || []
+          const prevVolumes = volumesRef.current[symbol] || []
+          const prevPrice   = prevHistory[prevHistory.length - 1] ?? price
+          const volume      = parseFloat(tick.volume || '0')
+
+          const newHistory = [...prevHistory, price].slice(-65)
+          const newVolumes = [...prevVolumes, volume].slice(-65)
+          historyRef.current[symbol] = newHistory
+          volumesRef.current[symbol] = newVolumes
+
+          const changePct = prevPrice > 0
+            ? (((price - prevPrice) / prevPrice) * 100).toFixed(2) : '0.00'
+          const changeStr = parseFloat(changePct) >= 0 ? `+${changePct}%` : `${changePct}%`
+
+          updated[symbol] = { price, history: newHistory, volumes: newVolumes, change: changeStr }
+
+          if (watchedSymbols.has(symbol)) {
+            fetchAiInsight(symbol, price)
+          }
+        }
+        return updated
+      })
+    }
+
+    const connectSse = () => {
+      if (destroyed) return
+      es = new EventSource(`${API_PRICE}/sse/prices`)
+
+      es.onopen = () => {
+        setSseConnected(true)
+        reconnectCount.current = 0
+        if (fallbackTimer) { clearInterval(fallbackTimer); fallbackTimer = null }
+      }
+
+      es.onmessage = (event) => {
+        try { processTickBatch(JSON.parse(event.data)) } catch { /* ignorar errores de parse */ }
+      }
+
+      es.onerror = () => {
+        if (destroyed) return
+        setSseConnected(false)
+        es?.close()
+        es = null
+
+        // Fallback: polling REST mientras SSE está caído
+        if (!fallbackTimer) {
+          fallbackTimer = setInterval(async () => {
+            try {
+              const res = await apiClient.get('/prices')
+              processTickBatch(res.data)
+            } catch { /* ignorar errores de polling */ }
+          }, refreshInterval)
+        }
+
+        // Reconexión con backoff exponencial
+        reconnectCount.current += 1
+        const delay = Math.min(2000 * Math.pow(1.5, reconnectCount.current - 1), 30_000)
+        reconnectTimeout = setTimeout(connectSse, delay)
+      }
+    }
+
+    connectSse()
+
+    return () => {
+      destroyed = true
+      es?.close()
+      if (fallbackTimer)    clearInterval(fallbackTimer)
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+      setSseConnected(false)
+    }
+  }, [isLoggedIn, loading, refreshInterval, fetchAiInsight])
+
+  // ─── Auth ──────────────────────────────────────────────────────────────────
+  const handleLoginSuccess = ({ name, plan }: { name: string; plan: string }) => {
+    localStorage.setItem('userName', name)
+    localStorage.setItem('userPlan', plan)
+    setUser(prev => ({ ...prev, name, plan }))
+    setIsLoggedIn(true)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('userName')
+    localStorage.removeItem('userPlan')
+    setIsLoggedIn(false)
+  }
+
+  const handleTradeExecuted = (trade: any) => {
+    setTradeHistory(prev => [trade, ...prev].slice(0, 50))
+    setPortfolioVersion(v => v + 1)   // fuerza refresco del portfolio
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  if (loading)     return <LoadingSplash />
+  if (!isLoggedIn) return <Login onLoginSuccess={handleLoginSuccess} />
 
   return (
     <div style={{
-      display: 'flex', height: '100vh', width: '100vw', background: '#080808', color: '#e0e0e0', overflow: 'hidden',
+      display: 'flex', height: '100vh', width: '100vw',
+      background: '#080808', color: '#e0e0e0', overflow: 'hidden',
       transition: '0.3s',
-      boxShadow: alertFlash ? 'inset 0 0 100px rgba(8, 153, 129, 0.2)' : 'none'
+      boxShadow: alertFlash ? 'inset 0 0 100px rgba(8, 153, 129, 0.4)' : 'none'
     }}>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={() => setIsLoggedIn(false)} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Header currentSymbol={currentSymbol} setCurrentSymbol={setCurrentSymbol} user={user} marketData={marketData} />
+        <Header
+          currentSymbol={currentSymbol}
+          setCurrentSymbol={setCurrentSymbol}
+          user={user}
+          marketData={marketData}
+          sseConnected={sseConnected}
+          aiHealth={aiHealth}
+        />
         <main style={{ flex: 1, overflow: 'hidden' }}>
-          {activeTab === 'TRADE' && <TradingTerminal symbol={currentSymbol} insight={aiInsights[currentSymbol]} history={tradeHistory} user={user} />}
-          {activeTab === 'MEMES' && <MemeRadar onSelect={setCurrentSymbol} marketData={marketData} aiInsights={aiInsights} />}
-          {activeTab === 'PORTFOLIO' && <Portfolio user={user} />}
-          {activeTab === 'CONFIG' && <Settings setRefreshInterval={setRefreshInterval} currentInterval={refreshInterval} />}
+          {activeTab === 'TRADE' && (
+            <TradingTerminal
+              symbol={currentSymbol}
+              insight={aiInsights[currentSymbol]}
+              history={tradeHistory}
+              user={user}
+              onTradeExecuted={handleTradeExecuted}
+            />
+          )}
+          {activeTab === 'MEMES' && (
+            <MemeRadar
+              onSelect={setCurrentSymbol}
+              marketData={marketData}
+              aiInsights={aiInsights}
+            />
+          )}
+          {activeTab === 'PORTFOLIO' && (
+            <Portfolio user={user} refreshTrigger={portfolioVersion} />
+          )}
+          {activeTab === 'CONFIG' && (
+            <Settings
+              setRefreshInterval={setRefreshInterval}
+              currentInterval={refreshInterval}
+              aiHealth={aiHealth}
+            />
+          )}
         </main>
       </div>
     </div>

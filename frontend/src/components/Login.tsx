@@ -1,97 +1,175 @@
-import { useState } from 'react';
-import axios from 'axios';
-import { Cpu } from 'lucide-react';
+import { useState } from 'react'
+import { authClient } from '../api'
+import { TrendingUp } from 'lucide-react'
 
 interface LoginProps {
-  onLoginSuccess: (userData: { name: string; plan: string }) => void;
+  onLoginSuccess: (userData: { name: string; plan: string }) => void
+}
+
+function validateEmail(email: string): string {
+  if (!email.trim()) return 'El email es obligatorio'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Introduce un email válido'
+  return ''
+}
+
+function validatePassword(password: string): string {
+  if (!password) return 'La contraseña es obligatoria'
+  if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres'
+  return ''
 }
 
 export default function Login({ onLoginSuccess }: LoginProps) {
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleLogin = async (e: any) => {
-    e.preventDefault();
-    const email = e.target.email.value;
-    const password = e.target.password.value;
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = e.currentTarget
+    const email    = (form.elements.namedItem('email')    as HTMLInputElement).value.trim()
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value
+
+    const emailErr = validateEmail(email)
+    if (emailErr) { setError(emailErr); return }
+    const passErr = validatePassword(password)
+    if (passErr)  { setError(passErr);  return }
+
+    setLoading(true)
+    setError('')
     try {
-      const res = await axios.post('http://localhost:8080/auth/login', { email, password });
+      const res = await authClient.post('/auth/login', { email, password })
       if (res.data.token) {
-        localStorage.setItem('token', res.data.token);
-        onLoginSuccess({ 
-          name: email.split('@')[0].toUpperCase(), 
-          plan: 'PRO ELITE' 
-        });
+        localStorage.setItem('token', res.data.token)
+        onLoginSuccess({ name: email.split('@')[0].toUpperCase(), plan: 'PRO ELITE' })
       }
-    } catch (error) {
-      alert("Error de acceso: Verifica tus credenciales o el CORS del backend");
+    } catch (e: any) {
+      if (e.response?.status === 401 || e.response?.status === 400) {
+        setError('Credenciales incorrectas')
+      } else if (e.code === 'ERR_NETWORK') {
+        setError('Sin conexión con el servidor de autenticación')
+      } else {
+        setError('Error al iniciar sesión. Inténtalo de nuevo.')
+      }
+    } finally {
+      setLoading(false)
     }
-  };
+  }
 
-  const handleRegister = async (e: any) => {
-    e.preventDefault();
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = e.currentTarget
+    const email    = (form.elements.namedItem('email')    as HTMLInputElement).value.trim()
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value
+    const fullName = (form.elements.namedItem('fullName') as HTMLInputElement)?.value.trim() || ''
+
+    const emailErr = validateEmail(email)
+    if (emailErr) { setError(emailErr); return }
+    const passErr = validatePassword(password)
+    if (passErr)  { setError(passErr);  return }
+    if (!fullName) { setError('El nombre es obligatorio'); return }
+
+    setLoading(true)
+    setError('')
     try {
-      await axios.post('http://localhost:8080/auth/register', {
-        email: e.target.email.value,
-        fullName: e.target.fullName.value,
-        password: e.target.password.value
-      });
-      alert("¡Registro exitoso! Ya puedes entrar.");
-      setIsRegistering(false);
-    } catch (error) {
-      alert("Error en el registro");
+      await authClient.post('/auth/register', { email, fullName, password })
+      setIsRegistering(false)
+      setError('')
+    } catch (e: any) {
+      if (e.response?.status === 409) {
+        setError('Este email ya está registrado')
+      } else if (e.code === 'ERR_NETWORK') {
+        setError('Sin conexión con el servidor de autenticación')
+      } else {
+        setError('Error en el registro. Inténtalo de nuevo.')
+      }
+    } finally {
+      setLoading(false)
     }
-  };
-
-  const inputStyle = { 
-    background: '#161a1e', 
-    border: '1px solid #2b3139', 
-    padding: '14px', 
-    borderRadius: '8px', 
-    color: 'white', 
-    outline: 'none', 
-    marginBottom: '15px' 
-  };
+  }
 
   return (
-    <div style={{ height: '100vh', width: '100vw', background: '#0b0e11', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ background: '#1e2329', padding: '40px', borderRadius: '24px', width: '380px', border: '1px solid #2b3139', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <div style={{ display: 'inline-flex', padding: '12px', background: 'rgba(252, 213, 53, 0.1)', borderRadius: '16px', marginBottom: '15px' }}>
-            <Cpu color="#FCD535" size={40} />
-          </div>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '22px', fontWeight: 'bold' }}>AI TRADING TERMINAL</h2>
-          <p style={{ color: '#848e9c', fontSize: '14px', marginTop: '8px' }}>
-            {isRegistering ? 'Crea tu cuenta de operador' : 'Acceso al sistema central'}
+    <div style={wrapStyle}>
+      <div style={cardStyle}>
+        <div style={brandRowStyle}>
+          <div style={logoStyle}><TrendingUp size={18} color="#000" strokeWidth={2.5} /></div>
+          <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.3px' }}>CryptoAI</span>
+        </div>
+
+        <div style={{ marginBottom: '28px' }}>
+          <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-0.8px', margin: '0 0 6px' }}>
+            {isRegistering ? 'Crear cuenta' : 'Bienvenido'}
+          </h1>
+          <p style={{ fontSize: '13px', color: '#333', margin: 0 }}>
+            {isRegistering ? 'Regístrate para acceder al terminal' : 'Accede a tu terminal de trading'}
           </p>
         </div>
 
-        <form onSubmit={isRegistering ? handleRegister : handleLogin} style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '15px' }}>
-            <label style={{ fontSize: '11px', color: '#848e9c', fontWeight: 'bold' }}>ID DE USUARIO / EMAIL</label>
-            <input name="email" type="email" placeholder="operador@crypto-ai.com" required style={inputStyle} />
+        {error && (
+          <div style={{ background: 'rgba(255,59,59,0.08)', border: '1px solid rgba(255,59,59,0.2)', borderRadius: '8px', padding: '10px 12px', marginBottom: '16px', fontSize: '12px', color: '#ff3b3b' }}>
+            {error}
           </div>
+        )}
 
+        <form onSubmit={isRegistering ? handleRegister : handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} noValidate>
           {isRegistering && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '15px' }}>
-              <label style={{ fontSize: '11px', color: '#848e9c', fontWeight: 'bold' }}>NOMBRE DEL OPERADOR</label>
-              <input name="fullName" type="text" placeholder="Nombre completo" required style={inputStyle} />
+            <div>
+              <div style={labelStyle}>Nombre completo</div>
+              <input name="fullName" type="text" placeholder="Tu nombre" required minLength={2} style={fieldStyle} />
             </div>
           )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '20px' }}>
-            <label style={{ fontSize: '11px', color: '#848e9c', fontWeight: 'bold' }}>CLAVE DE ACCESO</label>
-            <input name="password" type="password" placeholder="••••••••" required style={inputStyle} />
+          <div>
+            <div style={labelStyle}>Email</div>
+            <input name="email" type="email" placeholder="tu@email.com" required style={fieldStyle} />
           </div>
-
-          <button type="submit" style={{ background: '#FCD535', color: 'black', padding: '16px', border: 'none', borderRadius: '12px', fontWeight: '800', cursor: 'pointer', fontSize: '14px', transition: '0.2s' }}>
-            {isRegistering ? 'SOLICITAR REGISTRO' : 'ENTRAR AL TERMINAL'}
+          <div>
+            <div style={labelStyle}>Contraseña</div>
+            <input name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} style={fieldStyle} />
+          </div>
+          <button type="submit" disabled={loading} style={btnStyle(loading)}>
+            {loading ? 'Cargando...' : isRegistering ? 'Crear cuenta' : 'Entrar'}
           </button>
         </form>
 
-        <p onClick={() => setIsRegistering(!isRegistering)} style={{ color: '#FCD535', fontSize: '13px', textAlign: 'center', marginTop: '25px', cursor: 'pointer', fontWeight: '600' }}>
-          {isRegistering ? '¿Ya tienes credenciales? Identifícate' : '¿No tienes acceso? Crea una cuenta'}
+        <p
+          onClick={() => { setIsRegistering(!isRegistering); setError('') }}
+          style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#333', cursor: 'pointer' }}
+        >
+          {isRegistering ? '¿Ya tienes cuenta? ' : '¿No tienes cuenta? '}
+          <span style={{ color: '#fff' }}>{isRegistering ? 'Inicia sesión' : 'Regístrate'}</span>
         </p>
       </div>
     </div>
-  );
+  )
 }
+
+const wrapStyle: React.CSSProperties = {
+  height: '100vh', width: '100vw', background: '#000',
+  display: 'flex', justifyContent: 'center', alignItems: 'center',
+  fontFamily: 'Inter, sans-serif'
+}
+const cardStyle: React.CSSProperties = {
+  background: '#080808', border: '1px solid #111', borderRadius: '20px',
+  padding: '36px', width: '360px'
+}
+const brandRowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px'
+}
+const logoStyle: React.CSSProperties = {
+  width: '34px', height: '34px', background: '#fff', borderRadius: '9px',
+  display: 'flex', alignItems: 'center', justifyContent: 'center'
+}
+const labelStyle: React.CSSProperties = {
+  fontSize: '11px', color: '#333', marginBottom: '6px', fontWeight: 500
+}
+const fieldStyle: React.CSSProperties = {
+  background: '#0d0d0d', border: '1px solid #1a1a1a', color: '#fff',
+  padding: '11px 14px', borderRadius: '10px', fontSize: '13px',
+  width: '100%', fontFamily: 'Inter, sans-serif', outline: 'none',
+  boxSizing: 'border-box'
+}
+const btnStyle = (loading: boolean): React.CSSProperties => ({
+  background: '#fff', color: '#000', border: 'none',
+  padding: '13px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
+  fontFamily: 'Inter, sans-serif', marginTop: '4px', transition: 'opacity 0.15s'
+})
