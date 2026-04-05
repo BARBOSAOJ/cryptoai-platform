@@ -6,7 +6,10 @@
 
 # Java
 target/
-.mvn/
+# .mvn/ contiene maven-wrapper.properties necesario para CI
+!.mvn/
+!.mvn/wrapper/
+!.mvn/wrapper/maven-wrapper.properties
 
 # Python
 __pycache__/
