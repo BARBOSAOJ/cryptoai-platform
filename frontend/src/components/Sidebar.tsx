@@ -8,9 +8,11 @@ const NAV = [
   { tab: 'CONFIG',    icon: Settings },
 ] as const
 
+type Tab = 'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'
+
 interface SidebarProps {
-  activeTab: string
-  setActiveTab: (tab: string) => void
+  activeTab: Tab
+  setActiveTab: (tab: Tab) => void
   onLogout: () => void
 }
 
@@ -33,7 +35,7 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarPr
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {NAV.map(({ tab, icon: Icon }) => (
-          <div key={tab} onClick={() => setActiveTab(tab)} style={navItemStyle(activeTab === tab)}>
+          <div key={tab} onClick={() => setActiveTab(tab as Tab)} style={navItemStyle(activeTab === tab)}>
             <Icon size={18} strokeWidth={1.75} />
           </div>
         ))}
