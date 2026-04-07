@@ -118,7 +118,7 @@ class GestorReentrenamiento:
     SEQ_LEN      = 60          # ventana de entrada del LSTM
     FEATURES     = ['Close', 'Volume', 'RSI', 'MACD']
     INTERVALO_H  = 24          # horas entre reentrenamientos automáticos
-    SIMBOLO_BASE = 'BTCUSDT'   # símbolo de referencia para el entrenamiento
+    SIMBOLOS_FIJOS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'BNBUSDT', 'XRPUSDT']
 
     def __init__(self):
         self.estado: str               = 'inactivo'   # inactivo | entrenando | error
@@ -126,6 +126,46 @@ class GestorReentrenamiento:
         self.metricas: dict            = {}
         self._lock                     = threading.Lock()
         self._executor                 = ThreadPoolExecutor(max_workers=1)
+
+    # ── Obtención dinámica de símbolos ────────────────────────────────────────
+
+    @staticmethod
+    def obtener_todos_usdt(max_simbolos: int = 0) -> list:
+        """
+        Consulta Binance para obtener todos los pares USDT activos,
+        ordenados de mayor a menor volumen en 24h.
+        max_simbolos=0 significa sin límite (todos).
+        """
+        try:
+            # 1. Símbolos activos de tipo SPOT con quote=USDT
+            info = requests.get(
+                "https://api.binance.com/api/v3/exchangeInfo", timeout=15
+            ).json()
+            activos = {
+                s['symbol']
+                for s in info.get('symbols', [])
+                if s['status'] == 'TRADING'
+                and s['quoteAsset'] == 'USDT'
+                and s['isSpotTradingAllowed']
+            }
+
+            # 2. Ordenar por volumen 24h
+            tickers = requests.get(
+                "https://api.binance.com/api/v3/ticker/24hr", timeout=15
+            ).json()
+            ordenados = sorted(
+                [t for t in tickers if t['symbol'] in activos],
+                key=lambda t: float(t.get('quoteVolume', 0)),
+                reverse=True,
+            )
+            simbolos = [t['symbol'] for t in ordenados]
+            if max_simbolos > 0:
+                simbolos = simbolos[:max_simbolos]
+            logger.info(f"Símbolos USDT obtenidos de Binance: {len(simbolos)}")
+            return simbolos
+        except Exception as e:
+            logger.warning(f"No se pudieron obtener símbolos de Binance: {e}. Usando lista fija.")
+            return GestorReentrenamiento.SIMBOLOS_FIJOS
 
     # ── Construcción de arquitectura ──────────────────────────────────────────
 
@@ -147,58 +187,104 @@ class GestorReentrenamiento:
 
     # ── Preparación de datos ──────────────────────────────────────────────────
 
-    def _preparar_datos(self, symbol: str, limit: int = 1000, interval: str = '1h'):
+    def _preparar_datos_simbolo(self, symbol: str, scaler_fit, limit: int = 1000, interval: str = '1h'):
         """
-        Descarga velas de Binance, calcula RSI y MACD,
-        escala y construye secuencias (X, y) para el LSTM.
-        Retorna (X, y, scaler_nuevo) o lanza excepción.
+        Descarga velas de un símbolo, calcula indicadores y construye
+        secuencias (X, y) normalizadas con el scaler proporcionado.
+        Retorna (X, y) o (None, None) si hay error.
+        """
+        try:
+            url  = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+            resp = requests.get(url, timeout=15)
+            if resp.status_code != 200:
+                logger.warning(f"Binance {symbol} devolvió {resp.status_code}")
+                return None, None
+
+            rows = resp.json()
+            if len(rows) < self.SEQ_LEN + 30:
+                logger.warning(f"{symbol}: datos insuficientes ({len(rows)} velas)")
+                return None, None
+
+            df = pd.DataFrame(rows, columns=[
+                'ts','open','high','low','close','vol',
+                'close_ts','quote_vol','trades','taker_base','taker_quote','ignore'
+            ])
+            df['Close']  = df['close'].astype(float)
+            df['Volume'] = df['vol'].astype(float)
+            df['RSI']    = IndicadoresTecnicos.rsi(df)
+            df['MACD'], _ = IndicadoresTecnicos.macd(df)
+            df.bfill(inplace=True)
+            df.fillna(0, inplace=True)
+
+            # Normalizar cada símbolo por separado (precios muy distintos entre BTC y DOGE)
+            data_scaled = scaler_fit.transform(
+                df[self.FEATURES].values
+            ) if hasattr(scaler_fit, 'scale_') else scaler_fit.fit_transform(
+                df[self.FEATURES].values
+            )
+
+            X, y = [], []
+            for i in range(self.SEQ_LEN, len(data_scaled)):
+                X.append(data_scaled[i - self.SEQ_LEN:i])
+                y.append(data_scaled[i, 0])
+            return np.array(X), np.array(y)
+        except Exception as e:
+            logger.warning(f"Error preparando datos de {symbol}: {e}")
+            return None, None
+
+    def _preparar_datos_multi(self, simbolos: list, limit: int = 1000, interval: str = '1h'):
+        """
+        Descarga y combina datos de todos los símbolos en un único dataset.
+        Cada símbolo se normaliza con su propio MinMaxScaler para que
+        las magnitudes de precio no dominen el aprendizaje.
+        Devuelve (X_total, y_total, scaler_btc).
         """
         from sklearn.preprocessing import MinMaxScaler
 
-        url  = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        resp = requests.get(url, timeout=15)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Binance devolvió {resp.status_code}")
+        X_total, y_total = [], []
+        scaler_btc  = None
+        ok, fallido = 0, 0
+        total       = len(simbolos)
 
-        rows = resp.json()
-        if len(rows) < self.SEQ_LEN + 30:
-            raise RuntimeError(f"Datos insuficientes: {len(rows)} velas")
+        for i, sym in enumerate(simbolos, 1):
+            sc = MinMaxScaler()
+            X, y = self._preparar_datos_simbolo(sym, sc, limit, interval)
+            if X is None:
+                fallido += 1
+            else:
+                X_total.append(X)
+                y_total.append(y)
+                if sym == 'BTCUSDT' or scaler_btc is None:
+                    scaler_btc = sc
+                ok += 1
 
-        df = pd.DataFrame(rows, columns=[
-            'ts','open','high','low','close','vol',
-            'close_ts','quote_vol','trades','taker_base','taker_quote','ignore'
-        ])
-        df['Close']  = df['close'].astype(float)
-        df['Volume'] = df['vol'].astype(float)
+            # Log de progreso cada 25 símbolos
+            if i % 25 == 0 or i == total:
+                logger.info(f"  Progreso: {i}/{total} — OK={ok} fallidos={fallido}")
 
-        # Indicadores
-        df['RSI']  = IndicadoresTecnicos.rsi(df)
-        df['MACD'], macd_sig = IndicadoresTecnicos.macd(df)
-        df.bfill(inplace=True)
-        df.fillna(0, inplace=True)
+            # Pausa de 120ms entre llamadas para respetar rate limit de Binance
+            time.sleep(0.12)
 
-        data = df[self.FEATURES].values
+        if not X_total:
+            raise RuntimeError("Ningún símbolo devolvió datos válidos")
 
-        scaler_nuevo = MinMaxScaler()
-        data_scaled  = scaler_nuevo.fit_transform(data)
-
-        X, y = [], []
-        for i in range(self.SEQ_LEN, len(data_scaled)):
-            X.append(data_scaled[i - self.SEQ_LEN:i])
-            y.append(data_scaled[i, 0])   # Close normalizado
-
-        return np.array(X), np.array(y), scaler_nuevo
+        logger.info(f"Dataset combinado: {ok} símbolos, {sum(len(x) for x in X_total)} secuencias totales")
+        return np.concatenate(X_total), np.concatenate(y_total), scaler_btc
 
     # ── Lógica de entrenamiento (ejecutada en hilo aparte) ────────────────────
 
-    def _ejecutar_entrenamiento(self, symbol: str, epochs: int, desde_cero: bool):
+    def _ejecutar_entrenamiento(self, simbolos: list, epochs: int, desde_cero: bool):
         global lstm_model, scaler
         try:
             with self._lock:
                 self.estado = 'entrenando'
 
-            logger.info(f"Reentrenamiento iniciado — symbol={symbol} epochs={epochs} desde_cero={desde_cero}")
-            X, y, scaler_nuevo = self._preparar_datos(symbol)
+            logger.info(f"Reentrenamiento iniciado — símbolos={simbolos} epochs={epochs} desde_cero={desde_cero}")
+            X, y, scaler_nuevo = self._preparar_datos_multi(simbolos)
+
+            # Mezclar secuencias para que el modelo no aprenda sesgo de orden
+            indices = np.random.permutation(len(X))
+            X, y = X[indices], y[indices]
 
             split = int(len(X) * 0.85)
             X_train, X_val = X[:split], X[split:]
@@ -208,7 +294,7 @@ class GestorReentrenamiento:
                 modelo = self._construir_arquitectura()
                 logger.info("Arquitectura LSTM construida desde cero")
             else:
-                modelo = lstm_model   # fine-tune sobre el modelo actual
+                modelo = lstm_model
 
             historia = modelo.fit(
                 X_train, y_train,
@@ -218,13 +304,11 @@ class GestorReentrenamiento:
                 verbose=0,
             )
 
-            # Guardado atómico: primero a temporal, luego reemplazar
             ruta_tmp = self.RUTA_MODELO + '.tmp'
             modelo.save(ruta_tmp)
             os.replace(ruta_tmp, self.RUTA_MODELO)
             joblib.dump(scaler_nuevo, self.RUTA_SCALER)
 
-            # Actualizar referencias globales
             lstm_model = modelo
             scaler     = scaler_nuevo
 
@@ -233,6 +317,7 @@ class GestorReentrenamiento:
                 'val_loss_final': round(float(historia.history['val_loss'][-1]), 6),
                 'epochs':         epochs,
                 'muestras':       len(X_train),
+                'simbolos':       simbolos,
             }
             with self._lock:
                 self.estado               = 'inactivo'
@@ -244,17 +329,22 @@ class GestorReentrenamiento:
         except Exception as e:
             logger.error(f"Error en reentrenamiento: {e}")
             with self._lock:
-                self.estado  = 'error'
+                self.estado   = 'error'
                 self.metricas = {'error': str(e)}
 
     # ── API pública ───────────────────────────────────────────────────────────
 
-    def lanzar(self, symbol: str = SIMBOLO_BASE, epochs: int = 5, desde_cero: bool = False):
-        """Lanza el entrenamiento en un hilo de fondo (no bloqueante)."""
+    def lanzar(self, simbolos: list = None, epochs: int = 5, desde_cero: bool = False):
+        """
+        Lanza el entrenamiento en un hilo de fondo (no bloqueante).
+        Si simbolos es None, obtiene dinámicamente todos los pares USDT activos.
+        """
         with self._lock:
             if self.estado == 'entrenando':
-                return False   # ya hay uno en curso
-        self._executor.submit(self._ejecutar_entrenamiento, symbol, epochs, desde_cero)
+                return False
+        if simbolos is None:
+            simbolos = self.obtener_todos_usdt()
+        self._executor.submit(self._ejecutar_entrenamiento, simbolos, epochs, desde_cero)
         return True
 
     def estado_actual(self) -> dict:
@@ -904,22 +994,23 @@ async def get_trending_radar():
 
 @app.post("/retrain")
 async def retrain(
-    symbol:     str  = GestorReentrenamiento.SIMBOLO_BASE,
+    simbolos:   str  = '',
     epochs:     int  = 5,
     desde_cero: bool = False,
 ):
     """
     Lanza el reentrenamiento del LSTM en segundo plano.
-    - symbol: símbolo de Binance para obtener datos (default BTCUSDT)
+    - simbolos: lista separada por comas; vacío = todos los pares USDT activos de Binance
     - epochs: épocas de fine-tuning (default 5)
     - desde_cero: reconstruir arquitectura completa (default false)
     """
-    symbol = symbol.upper().strip()
+    lista = [s.strip().upper() for s in simbolos.split(',') if s.strip()] or None
     epochs = max(1, min(epochs, 20))
-    ok = gestor_reentrenamiento.lanzar(symbol, epochs, desde_cero)
+    ok = gestor_reentrenamiento.lanzar(lista, epochs, desde_cero)
     if not ok:
         raise HTTPException(status_code=409, detail="Ya hay un reentrenamiento en curso")
-    return {"mensaje": "Reentrenamiento iniciado", "symbol": symbol, "epochs": epochs}
+    n = len(lista) if lista else "todos los pares USDT"
+    return {"mensaje": "Reentrenamiento iniciado", "simbolos": lista or "todos", "epochs": epochs, "total": n}
 
 @app.get("/retrain/status")
 async def retrain_status():
