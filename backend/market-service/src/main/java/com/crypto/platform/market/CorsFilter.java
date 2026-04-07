@@ -1,18 +1,30 @@
 package com.crypto.platform.market;
 
-import jakarta.ws.rs.container.ContainerRequestContext;
-import jakarta.ws.rs.container.ContainerResponseContext;
-import jakarta.ws.rs.container.ContainerResponseFilter;
-import jakarta.ws.rs.ext.Provider;
-import java.io.IOException;
+import io.quarkus.vertx.web.RouteFilter;
+import io.vertx.ext.web.RoutingContext;
 
-@Provider
-public class CorsFilter implements ContainerResponseFilter {
-    @Override
-    public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) throws IOException {
-        responseContext.getHeaders().add("Access-Control-Allow-Origin", "http://localhost:5173");
-        responseContext.getHeaders().add("Access-Control-Allow-Credentials", "true");
-        responseContext.getHeaders().add("Access-Control-Allow-Headers", "origin, content-type, accept, authorization");
-        responseContext.getHeaders().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+/**
+ * Filtro CORS a nivel Vert.x — cubre SSE, errores 4xx/5xx y cualquier
+ * respuesta que el ContainerResponseFilter de JAX-RS no alcanza.
+ */
+public class CorsFilter {
+
+    @RouteFilter(401)
+    void cors(RoutingContext rc) {
+        String origin = rc.request().getHeader("Origin");
+        if (origin != null && !origin.isBlank()) {
+            rc.response()
+                .putHeader("Access-Control-Allow-Origin",  origin)
+                .putHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+                .putHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,Cache-Control")
+                .putHeader("Access-Control-Max-Age",       "86400");
+        }
+
+        if ("OPTIONS".equalsIgnoreCase(rc.request().method().name())) {
+            rc.response().setStatusCode(204).end();
+            return;
+        }
+
+        rc.next();
     }
 }
