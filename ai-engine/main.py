@@ -513,6 +513,195 @@ class IndicadoresTecnicos:
 
 
 
+# ─── Detector de régimen de mercado ──────────────────────────────────────────
+
+class DetectorRegimen:
+    """
+    Detecta si el mercado está en tendencia, lateral o volátil.
+    Ajusta los pesos de los indicadores según el régimen para evitar
+    señales falsas (ej: RSI en tendencia fuerte, MACD en mercado lateral).
+
+    Regímenes:
+      TRENDING   — movimiento direccional claro (ADX alto, R² alto)
+      RANGING    — precio oscilando en rango (ADX bajo, baja volatilidad)
+      VOLATILE   — movimientos bruscos sin dirección clara (ATR/precio alto)
+      TRANSITION — zona intermedia entre regímenes
+    """
+
+    @staticmethod
+    def adx(df: 'pd.DataFrame', window: int = 14) -> float:
+        """
+        Average Directional Index con datos OHLCV.
+        Si solo hay Close, usa una aproximación basada en rangos de Close.
+        """
+        if not _has_ml: return 20.0
+        try:
+            if 'High' in df.columns and 'Low' in df.columns:
+                high, low = df['High'], df['Low']
+            else:
+                # Aproximación: High/Low estimados con rolling max/min de Close
+                high = df['Close'].rolling(3).max()
+                low  = df['Close'].rolling(3).min()
+
+            prev_close = df['Close'].shift(1)
+            tr = pd.concat([
+                high - low,
+                (high - prev_close).abs(),
+                (low  - prev_close).abs(),
+            ], axis=1).max(axis=1)
+
+            dm_pos = (high - high.shift(1)).clip(lower=0)
+            dm_neg = (low.shift(1) - low).clip(lower=0)
+            dm_pos = dm_pos.where(dm_pos > dm_neg, 0)
+            dm_neg = dm_neg.where(dm_neg > dm_pos, 0)
+
+            atr_s   = tr.ewm(span=window, adjust=False).mean()
+            di_pos  = 100 * dm_pos.ewm(span=window, adjust=False).mean() / (atr_s + 1e-9)
+            di_neg  = 100 * dm_neg.ewm(span=window, adjust=False).mean() / (atr_s + 1e-9)
+            dx      = 100 * (di_pos - di_neg).abs() / (di_pos + di_neg + 1e-9)
+            adx_val = float(dx.ewm(span=window, adjust=False).mean().iloc[-1])
+            return round(adx_val, 2)
+        except Exception:
+            return 20.0
+
+    @staticmethod
+    def pendiente_lineal(precios: list, ventana: int = 20) -> float:
+        """
+        Pendiente normalizada de una regresión lineal sobre las últimas
+        `ventana` velas. Positiva = tendencia alcista, negativa = bajista.
+        Normalizada por el precio medio para ser comparable entre símbolos.
+        """
+        if not _has_ml or len(precios) < ventana: return 0.0
+        try:
+            y = np.array(precios[-ventana:], dtype=float)
+            x = np.arange(ventana)
+            coef  = np.polyfit(x, y, 1)
+            slope = coef[0]
+            return round(slope / (y.mean() + 1e-9), 6)   # normalizado
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def r_cuadrado(precios: list, ventana: int = 20) -> float:
+        """
+        R² de la regresión lineal: 1 = tendencia perfecta, 0 = ruido puro.
+        Alto R² en precio = mercado tendencial.
+        """
+        if not _has_ml or len(precios) < ventana: return 0.0
+        try:
+            y    = np.array(precios[-ventana:], dtype=float)
+            x    = np.arange(ventana)
+            coef = np.polyfit(x, y, 1)
+            y_hat = np.polyval(coef, x)
+            ss_res = ((y - y_hat) ** 2).sum()
+            ss_tot = ((y - y.mean()) ** 2).sum()
+            return round(1 - ss_res / (ss_tot + 1e-9), 4)
+        except Exception:
+            return 0.0
+
+    @classmethod
+    def detectar(cls, df: 'pd.DataFrame', atr_val: float = 0.0) -> dict:
+        """
+        Analiza el régimen actual y devuelve:
+          - regimen:    TRENDING | RANGING | VOLATILE | TRANSITION
+          - adx:        valor ADX
+          - r2:         R² de la tendencia
+          - pendiente:  slope normalizada
+          - confianza:  0-1 (qué tan clara es la clasificación)
+          - pesos:      dict con factores multiplicadores por indicador
+        """
+        if not _has_ml or len(df) < 20:
+            return cls._regimen_neutro()
+
+        precios  = df['Close'].tolist()
+        adx_val  = cls.adx(df)
+        r2       = cls.r_cuadrado(precios)
+        pendiente = cls.pendiente_lineal(precios)
+
+        # Volatilidad relativa: ATR como % del precio actual
+        precio_actual = float(df['Close'].iloc[-1])
+        vol_relativa  = atr_val / (precio_actual + 1e-9) if atr_val > 0 else 0.0
+
+        # ── Clasificación ──────────────────────────────────────────────────────
+        if vol_relativa > 0.04:                            # ATR > 4% del precio
+            regimen    = "VOLATILE"
+            confianza  = min(1.0, vol_relativa / 0.06)
+            pesos      = cls._pesos_volatil()
+        elif adx_val > 25 and r2 > 0.6:                   # Tendencia clara
+            regimen    = "TRENDING"
+            confianza  = min(1.0, (adx_val - 25) / 30 * 0.5 + r2 * 0.5)
+            pesos      = cls._pesos_tendencia(pendiente)
+        elif adx_val < 20 and r2 < 0.4:                   # Mercado lateral
+            regimen    = "RANGING"
+            confianza  = min(1.0, (20 - adx_val) / 20 * 0.5 + (0.4 - r2) / 0.4 * 0.5)
+            pesos      = cls._pesos_lateral()
+        else:                                               # Transición entre regímenes
+            regimen    = "TRANSITION"
+            confianza  = 0.4
+            pesos      = cls._pesos_neutros()
+
+        return {
+            "regimen":    regimen,
+            "adx":        adx_val,
+            "r2":         r2,
+            "pendiente":  pendiente,
+            "confianza":  round(confianza, 2),
+            "pesos":      pesos,
+        }
+
+    # ── Tablas de pesos por régimen ────────────────────────────────────────────
+
+    @staticmethod
+    def _pesos_tendencia(pendiente: float) -> dict:
+        """En tendencia: priorizar indicadores de momentum, reducir osciladores."""
+        return {
+            "rsi":       0.6,   # RSI menos útil en tendencia fuerte
+            "stoch_rsi": 0.5,
+            "macd":      1.4,   # MACD destaca tendencias
+            "ema_cross": 1.4,
+            "bollinger": 0.7,
+            "vwap":      1.2,
+            "obv":       1.3,
+        }
+
+    @staticmethod
+    def _pesos_lateral() -> dict:
+        """En lateral: priorizar osciladores de reversión, ignorar momentum."""
+        return {
+            "rsi":       1.5,   # RSI muy útil en rangos
+            "stoch_rsi": 1.4,
+            "macd":      0.6,   # MACD da falsas señales en lateral
+            "ema_cross": 0.5,
+            "bollinger": 1.5,   # Bollinger ideal para rangos
+            "vwap":      1.2,
+            "obv":       0.8,
+        }
+
+    @staticmethod
+    def _pesos_volatil() -> dict:
+        """En volatilidad extrema: reducir todos los pesos, señal poco fiable."""
+        return {
+            "rsi":       0.5,
+            "stoch_rsi": 0.5,
+            "macd":      0.5,
+            "ema_cross": 0.5,
+            "bollinger": 0.6,
+            "vwap":      0.7,
+            "obv":       0.5,
+        }
+
+    @staticmethod
+    def _pesos_neutros() -> dict:
+        return {"rsi": 1.0, "stoch_rsi": 1.0, "macd": 1.0,
+                "ema_cross": 1.0, "bollinger": 1.0, "vwap": 1.0, "obv": 1.0}
+
+    @staticmethod
+    def _regimen_neutro() -> dict:
+        return {"regimen": "RANGING", "adx": 20.0, "r2": 0.0,
+                "pendiente": 0.0, "confianza": 0.0,
+                "pesos": DetectorRegimen._pesos_neutros()}
+
+
 # ─── Análisis por timeframe individual ────────────────────────────────────────
 
 def analizar_senal_timeframe(prices: list, volumes: list = None) -> dict:
@@ -721,6 +910,7 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     lstm_active    = False
     indicators     = {}
     predicted_next = 0.0
+    regimen_info   = DetectorRegimen._regimen_neutro()
 
     if _has_ml and len(history) >= 20:
         try:
@@ -756,32 +946,39 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
                 "volume_spike":  vol_spike,
             }
 
+            # ── Detección de régimen de mercado ───────────────────────────────
+            regimen_info = DetectorRegimen.detectar(df, atr_val)
+            pesos        = regimen_info["pesos"]
+            indicators["regimen"] = regimen_info["regimen"]
+            indicators["adx"]     = regimen_info["adx"]
+
             tech_signal = 0.0
-            # RSI clásico
-            if rsi_val < 30:   tech_signal += 0.25
-            elif rsi_val > 70: tech_signal -= 0.25
-            # Stoch RSI (más sensible — pesos menores para evitar ruido)
-            if stoch_rsi < 0.20:   tech_signal += 0.15
-            elif stoch_rsi > 0.80: tech_signal -= 0.15
+            # RSI clásico (peso ajustado por régimen)
+            if rsi_val < 30:   tech_signal += 0.25 * pesos["rsi"]
+            elif rsi_val > 70: tech_signal -= 0.25 * pesos["rsi"]
+            # Stoch RSI
+            if stoch_rsi < 0.20:   tech_signal += 0.15 * pesos["stoch_rsi"]
+            elif stoch_rsi > 0.80: tech_signal -= 0.15 * pesos["stoch_rsi"]
             # MACD
-            if macd_hist > 0:  tech_signal += 0.18
-            elif macd_hist < 0: tech_signal -= 0.18
+            if macd_hist > 0:   tech_signal += 0.18 * pesos["macd"]
+            elif macd_hist < 0: tech_signal -= 0.18 * pesos["macd"]
             # EMA cross
-            if ema_cross > 0:  tech_signal += 0.15
-            elif ema_cross < 0: tech_signal -= 0.15
+            if ema_cross > 0:   tech_signal += 0.15 * pesos["ema_cross"]
+            elif ema_cross < 0: tech_signal -= 0.15 * pesos["ema_cross"]
             # Bollinger
-            if bb_pos < -0.5:  tech_signal += 0.12
-            elif bb_pos > 0.5: tech_signal -= 0.12
-            # VWAP — precio por encima/debajo del VWAP indica presión compradora/vendedora
+            if bb_pos < -0.5:  tech_signal += 0.12 * pesos["bollinger"]
+            elif bb_pos > 0.5: tech_signal -= 0.12 * pesos["bollinger"]
+            # VWAP
             if vwap_val > 0:
                 vwap_diff = (price - vwap_val) / (vwap_val + 1e-9)
-                if vwap_diff < -0.005:  tech_signal += 0.10  # precio bajo VWAP = posible rebote
-                elif vwap_diff > 0.005: tech_signal -= 0.05  # precio alto VWAP = posible rechazo
-            # OBV — confirma o contradice la tendencia
-            if obv_delta > 0.05:   tech_signal += 0.10
-            elif obv_delta < -0.05: tech_signal -= 0.10
-            # Amplificar con volumen anómalo
-            if vol_spike: tech_signal *= 1.25
+                if vwap_diff < -0.005:  tech_signal += 0.10 * pesos["vwap"]
+                elif vwap_diff > 0.005: tech_signal -= 0.05 * pesos["vwap"]
+            # OBV
+            if obv_delta > 0.05:   tech_signal += 0.10 * pesos["obv"]
+            elif obv_delta < -0.05: tech_signal -= 0.10 * pesos["obv"]
+            # Amplificar con volumen anómalo (solo si no estamos en régimen volátil)
+            if vol_spike and regimen_info["regimen"] != "VOLATILE":
+                tech_signal *= 1.25
 
             if lstm_model and scaler and len(history) >= 60:
                 data_matrix = df[['Close', 'Volume', 'RSI', 'MACD']].values[-60:]
@@ -792,7 +989,21 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
                 p_val = float(scaler.inverse_transform(dummy)[0][0])
                 predicted_next = round(p_val, 2)
                 lstm_score = float(((p_val - price) / price) * 100)
-                tech_score = lstm_score * 0.4 + tech_signal * 0.6
+
+                # Ponderación LSTM ajustada por régimen:
+                # TRENDING   → LSTM captura bien el momentum, más peso
+                # RANGING    → osciladores más fiables, menos peso LSTM
+                # VOLATILE   → señal poco confiable, mínimo peso LSTM
+                # TRANSITION → peso estándar
+                regimen_lstm = regimen_info["regimen"]
+                if regimen_lstm == "TRENDING":
+                    tech_score = lstm_score * 0.55 + tech_signal * 0.45
+                elif regimen_lstm == "RANGING":
+                    tech_score = lstm_score * 0.25 + tech_signal * 0.75
+                elif regimen_lstm == "VOLATILE":
+                    tech_score = lstm_score * 0.20 + tech_signal * 0.80
+                else:  # TRANSITION
+                    tech_score = lstm_score * 0.40 + tech_signal * 0.60
                 lstm_active = True
             else:
                 tech_score = tech_signal
@@ -800,21 +1011,18 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
         except Exception as e:
             logger.debug(f"Error análisis técnico {symbol}: {e}")
 
-    # ── Multi-timeframe confluence ─────────────────────────────────────────────
+    # ── Multi-timeframe ────────────────────────────────────────────────────────
     mtf = {}
     mtf_boost = 0.0
     try:
         mtf = confluencia_multi_timeframe(symbol)
-        # Blendear señal MTF (ponderada por timeframes mayores) con tech_score
         if mtf.get("total", 0) >= 2:
             tech_score = tech_score * 0.55 + mtf["signal"] * 0.45
-        # Boost de confianza según confluencia:
-        # 4/4 acuerdan → +18 pts | 3/4 → +12 pts | 2/4 → +5 pts
         agreement = mtf.get("agreement", 0)
         total_tf  = mtf.get("total", 0)
         if total_tf > 0:
             ratio = agreement / total_tf
-            if ratio >= 1.0:   mtf_boost = 18
+            if ratio >= 1.0:    mtf_boost = 18
             elif ratio >= 0.75: mtf_boost = 12
             elif ratio >= 0.5:  mtf_boost = 5
     except Exception as e:
@@ -829,14 +1037,20 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
         combined = avg_sentiment
 
     signal = "MANTENER ⚖️"
-    if combined > 0.10:   signal = "COMPRAR 🚀"
+    if combined > 0.10:    signal = "COMPRAR 🚀"
     elif combined < -0.10: signal = "VENDER 📉"
 
-    # Confianza base + boost MTF (techo 96 para no parecer 100% automático)
+    # ── Confianza con ajuste por régimen ──────────────────────────────────────
+    regimen_actual = indicators.get("regimen", "RANGING")
     base_max = 85 if lstm_active else 74 if indicators else 62
+
+    # TRENDING clara con confluencia MTF puede subir más
+    # VOLATILE reduce el techo para no dar señales falsas de alta confianza
+    if regimen_actual == "TRENDING":    base_max = min(base_max + 5, 91)
+    elif regimen_actual == "VOLATILE":  base_max = max(base_max - 10, 52)
+    elif regimen_actual == "TRANSITION": base_max = max(base_max - 5, 57)
+
     conf = int(min(base_max + mtf_boost, 96))
-    conf = max(conf, int(min(base_max, max(45, abs(combined) * 45 + 50))))
-    # Asegurar que el boost MTF se aplica por encima del base
     conf = min(int(max(conf, abs(combined) * 45 + 50) + mtf_boost), 96)
 
     result = {
@@ -850,6 +1064,7 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
         "predicted_next": predicted_next,
         "indicators":     indicators,
         "multi_timeframe": mtf,
+        "market_regime":  regimen_info if indicators else {"regimen": "RANGING"},
     }
 
     if redis_client:
