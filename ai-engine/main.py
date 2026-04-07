@@ -126,6 +126,12 @@ class BatchRequest(BaseModel):
     volumes: Optional[Dict[str, List[float]]] = None
 
 
+# ─── Multi-timeframe ──────────────────────────────────────────────────────────
+
+TIMEFRAMES         = ["1m", "15m", "1h", "4h"]
+TIMEFRAME_WEIGHTS  = {"1m": 0.15, "15m": 0.25, "1h": 0.35, "4h": 0.25}
+MTF_CACHE_TTL      = 60   # segundos en Redis para datos MTF
+
 # ─── Indicadores técnicos ─────────────────────────────────────────────────────
 
 def calculate_rsi(data, window=14):
@@ -175,6 +181,99 @@ def volume_spike(volumes, window=20):
         return bool(arr[-1] > avg * 2.0)
     except Exception:
         return False
+
+
+# ─── Análisis por timeframe individual ────────────────────────────────────────
+
+def analyze_timeframe_signal(prices: list, volumes: list = None) -> dict:
+    """Calcula señal técnica (RSI, MACD, EMA, BB) para un timeframe dado."""
+    if not _has_ml or len(prices) < 20:
+        return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
+    try:
+        if not volumes or len(volumes) != len(prices):
+            volumes = [1000.0] * len(prices)
+        df = pd.DataFrame({'Close': prices, 'Volume': volumes})
+        df['RSI']  = calculate_rsi(df)
+        df['MACD'], macd_sig = calculate_macd(df)
+        bb_upper, bb_lower   = calculate_bollinger(df)
+        df.bfill(inplace=True); df.fillna(0, inplace=True)
+
+        rsi_val   = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
+        macd_hist = float((df['MACD'] - macd_sig).iloc[-1])
+        ema_cross = calculate_ema_cross(df)
+        bb_pos    = bollinger_position(prices[-1], bb_upper, bb_lower)
+
+        signal = 0.0
+        if rsi_val < 30:   signal += 0.30
+        elif rsi_val > 70: signal -= 0.30
+        if macd_hist > 0:  signal += 0.20
+        elif macd_hist < 0: signal -= 0.20
+        if ema_cross > 0:  signal += 0.20
+        elif ema_cross < 0: signal -= 0.20
+        if bb_pos < -0.5:  signal += 0.15
+        elif bb_pos > 0.5: signal -= 0.15
+
+        trend = "BULLISH" if signal > 0.08 else "BEARISH" if signal < -0.08 else "NEUTRAL"
+        return {"signal": round(signal, 3), "rsi": round(rsi_val, 1), "trend": trend,
+                "macd_hist": round(macd_hist, 6), "ema_cross": round(ema_cross, 4)}
+    except Exception as e:
+        logger.debug(f"Error analizando timeframe: {e}")
+        return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
+
+
+def multi_timeframe_confluence(symbol: str) -> dict:
+    """
+    Descarga klines de 4 timeframes y calcula confluencia de señales.
+    Devuelve señal ponderada y nivel de acuerdo entre timeframes (0-1).
+    """
+    cache_key = f"mtf:{symbol}"
+    if redis_client:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception: pass
+
+    tf_results: dict = {}
+    weighted_signal  = 0.0
+    total_weight     = 0.0
+    bullish_count    = 0
+    bearish_count    = 0
+
+    for tf in TIMEFRAMES:
+        limit = 100 if tf in ("1m", "15m") else 60
+        data  = fetch_binance_klines(symbol, limit=limit, interval=tf)
+        if len(data["prices"]) < 20:
+            continue
+        result = analyze_timeframe_signal(data["prices"], data["volumes"])
+        tf_results[tf] = result
+        w = TIMEFRAME_WEIGHTS.get(tf, 0.25)
+        weighted_signal += result["signal"] * w
+        total_weight    += w
+        if result["trend"] == "BULLISH":  bullish_count += 1
+        elif result["trend"] == "BEARISH": bearish_count += 1
+
+    if total_weight > 0:
+        weighted_signal /= total_weight
+
+    n          = len(tf_results)
+    agreement  = max(bullish_count, bearish_count)
+    confluence = round(agreement / n, 2) if n > 0 else 0.0
+    dominant   = ("BULLISH" if bullish_count > bearish_count
+                  else "BEARISH" if bearish_count > bullish_count else "NEUTRAL")
+
+    mtf = {
+        "signal":      round(weighted_signal, 3),
+        "confluence":  confluence,
+        "timeframes":  tf_results,
+        "agreement":   agreement,
+        "total":       n,
+        "dominant":    dominant,
+    }
+    if redis_client:
+        try: redis_client.setex(cache_key, MTF_CACHE_TTL, json.dumps(mtf))
+        except Exception: pass
+    return mtf
 
 
 # ─── Historial de Binance (para pre-warm y endpoint /history) ─────────────────
@@ -281,9 +380,9 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
     news_data = fetch_real_news(symbol)
     news_details, avg_sentiment = analyze_headlines(news_data)
 
-    tech_score  = 0.0
-    lstm_active = False
-    indicators  = {}
+    tech_score     = 0.0
+    lstm_active    = False
+    indicators     = {}
     predicted_next = 0.0
 
     if _has_ml and len(history) >= 20:
@@ -312,19 +411,17 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
                 "volume_spike": vol_spike
             }
 
-            # Señal técnica combinada (sin LSTM)
             tech_signal = 0.0
-            if rsi_val < 30:  tech_signal += 0.3   # sobreventa
-            elif rsi_val > 70: tech_signal -= 0.3   # sobrecompra
-            if macd_hist > 0: tech_signal += 0.2
-            elif macd_hist < 0: tech_signal -= 0.2
-            if ema_cross > 0: tech_signal += 0.2
-            elif ema_cross < 0: tech_signal -= 0.2
-            if bb_pos < -0.5: tech_signal += 0.15   # cerca de banda inferior
-            elif bb_pos > 0.5: tech_signal -= 0.15  # cerca de banda superior
-            if vol_spike: tech_signal *= 1.3         # amplificar señal con volumen
+            if rsi_val < 30:   tech_signal += 0.30
+            elif rsi_val > 70: tech_signal -= 0.30
+            if macd_hist > 0:  tech_signal += 0.20
+            elif macd_hist < 0: tech_signal -= 0.20
+            if ema_cross > 0:  tech_signal += 0.20
+            elif ema_cross < 0: tech_signal -= 0.20
+            if bb_pos < -0.5:  tech_signal += 0.15
+            elif bb_pos > 0.5: tech_signal -= 0.15
+            if vol_spike:      tech_signal *= 1.3
 
-            # LSTM si está disponible y hay suficientes datos
             if lstm_model and scaler and len(history) >= 60:
                 data_matrix = df[['Close', 'Volume', 'RSI', 'MACD']].values[-60:]
                 scaled_data = scaler.transform(data_matrix)
@@ -342,7 +439,27 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
         except Exception as e:
             logger.debug(f"Error análisis técnico {symbol}: {e}")
 
-    # Ponderación final
+    # ── Multi-timeframe confluence ─────────────────────────────────────────────
+    mtf = {}
+    mtf_boost = 0.0
+    try:
+        mtf = multi_timeframe_confluence(symbol)
+        # Blendear señal MTF (ponderada por timeframes mayores) con tech_score
+        if mtf.get("total", 0) >= 2:
+            tech_score = tech_score * 0.55 + mtf["signal"] * 0.45
+        # Boost de confianza según confluencia:
+        # 4/4 acuerdan → +18 pts | 3/4 → +12 pts | 2/4 → +5 pts
+        agreement = mtf.get("agreement", 0)
+        total_tf  = mtf.get("total", 0)
+        if total_tf > 0:
+            ratio = agreement / total_tf
+            if ratio >= 1.0:   mtf_boost = 18
+            elif ratio >= 0.75: mtf_boost = 12
+            elif ratio >= 0.5:  mtf_boost = 5
+    except Exception as e:
+        logger.debug(f"Error MTF {symbol}: {e}")
+
+    # ── Ponderación final ──────────────────────────────────────────────────────
     if lstm_active:
         combined = tech_score * 0.6 + avg_sentiment * 0.4
     elif indicators:
@@ -351,11 +468,15 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
         combined = avg_sentiment
 
     signal = "MANTENER ⚖️"
-    if combined > 0.12:  signal = "COMPRAR 🚀"
-    elif combined < -0.12: signal = "VENDER 📉"
+    if combined > 0.10:   signal = "COMPRAR 🚀"
+    elif combined < -0.10: signal = "VENDER 📉"
 
-    max_conf = 85 if lstm_active else 72 if indicators else 60
-    conf = int(min(max_conf, max(40, abs(combined) * 40 + 48)))
+    # Confianza base + boost MTF (techo 96 para no parecer 100% automático)
+    base_max = 85 if lstm_active else 74 if indicators else 62
+    conf = int(min(base_max + mtf_boost, 96))
+    conf = max(conf, int(min(base_max, max(45, abs(combined) * 45 + 50))))
+    # Asegurar que el boost MTF se aplica por encima del base
+    conf = min(int(max(conf, abs(combined) * 45 + 50) + mtf_boost), 96)
 
     result = {
         "symbol":         symbol,
@@ -366,7 +487,8 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
         "news_details":   news_details,
         "lstm_active":    lstm_active,
         "predicted_next": predicted_next,
-        "indicators":     indicators
+        "indicators":     indicators,
+        "multi_timeframe": mtf,
     }
 
     if redis_client:
@@ -507,6 +629,16 @@ async def get_trending_radar():
                             "confidence": 45, "tech_impact": 0.0, "news_impact": 0.0,
                             "alert": "MEDIUM", "lstm_active": False, "news_details": []})
     return results
+
+@app.get("/multi-timeframe/{symbol}")
+async def get_multi_timeframe(symbol: str):
+    """Devuelve el análisis de confluencia multi-timeframe para un símbolo."""
+    symbol = symbol.upper().strip()
+    try:
+        mtf = multi_timeframe_confluence(symbol)
+        return mtf
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health():
