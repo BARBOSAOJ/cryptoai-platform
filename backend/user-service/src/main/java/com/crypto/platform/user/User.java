@@ -30,6 +30,12 @@ public class User extends PanacheEntityBase {
     @Column(name = "full_name")
     public String fullName;
 
+    @Column(name = "avatar_initials", length = 2)
+    public String avatarInitials;
+
+    @Column(columnDefinition = "TEXT")
+    public String bio;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "role")
