@@ -103,7 +103,7 @@ if _has_ml:
 
 # ─── Esquemas ─────────────────────────────────────────────────────────────────
 
-class MarketRequest(BaseModel):
+class PeticionMercado(BaseModel):
     symbol: str
     price: float
     history: List[float]
@@ -119,7 +119,7 @@ class MarketRequest(BaseModel):
         if v <= 0: raise ValueError('Precio debe ser > 0')
         return v
 
-class BatchRequest(BaseModel):
+class PeticionLote(BaseModel):
     symbols: List[str]
     prices: Dict[str, float]
     histories: Optional[Dict[str, List[float]]] = None
@@ -134,7 +134,7 @@ MTF_CACHE_TTL      = 60   # segundos en Redis para datos MTF
 
 # ─── Indicadores técnicos ─────────────────────────────────────────────────────
 
-class TechnicalIndicators:
+class IndicadoresTecnicos:
     """Todos los cálculos de indicadores técnicos agrupados como métodos estáticos."""
 
     @staticmethod
@@ -149,7 +149,7 @@ class TechnicalIndicators:
     def stoch_rsi(data: 'pd.DataFrame', rsi_window: int = 14, stoch_window: int = 14) -> 'pd.Series':
         """Stochastic RSI — más sensible que RSI clásico, ideal para crypto."""
         if not _has_ml: return data['Close'] * 0
-        rsi  = TechnicalIndicators.rsi(data, rsi_window)
+        rsi  = IndicadoresTecnicos.rsi(data, rsi_window)
         rsi_min = rsi.rolling(stoch_window).min()
         rsi_max = rsi.rolling(stoch_window).max()
         return (rsi - rsi_min) / (rsi_max - rsi_min + 1e-9)
@@ -243,18 +243,10 @@ class TechnicalIndicators:
             return False
 
 
-# Aliases para compatibilidad interna (evita renombrar todas las llamadas)
-def calculate_rsi(data, window=14):        return TechnicalIndicators.rsi(data, window)
-def calculate_macd(data, **kw):            return TechnicalIndicators.macd(data, **kw)
-def calculate_bollinger(data, **kw):       return TechnicalIndicators.bollinger(data, **kw)
-def calculate_ema_cross(data, **kw):       return TechnicalIndicators.ema_cross(data, **kw)
-def bollinger_position(p, upper, lower):   return TechnicalIndicators.bollinger_position(p, upper, lower)
-def volume_spike(volumes, window=20):      return TechnicalIndicators.volume_spike(volumes, window)
-
 
 # ─── Análisis por timeframe individual ────────────────────────────────────────
 
-def analyze_timeframe_signal(prices: list, volumes: list = None) -> dict:
+def analizar_senal_timeframe(prices: list, volumes: list = None) -> dict:
     """Calcula señal técnica completa (RSI, StochRSI, MACD, EMA, BB, OBV) para un timeframe."""
     if not _has_ml or len(prices) < 20:
         return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
@@ -262,17 +254,17 @@ def analyze_timeframe_signal(prices: list, volumes: list = None) -> dict:
         if not volumes or len(volumes) != len(prices):
             volumes = [1000.0] * len(prices)
         df = pd.DataFrame({'Close': prices, 'Volume': volumes})
-        df['RSI']  = TechnicalIndicators.rsi(df)
-        df['MACD'], macd_sig = TechnicalIndicators.macd(df)
-        bb_upper, bb_lower   = TechnicalIndicators.bollinger(df)
+        df['RSI']  = IndicadoresTecnicos.rsi(df)
+        df['MACD'], macd_sig = IndicadoresTecnicos.macd(df)
+        bb_upper, bb_lower   = IndicadoresTecnicos.bollinger(df)
         df.bfill(inplace=True); df.fillna(0, inplace=True)
 
         rsi_val   = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
         macd_hist = float((df['MACD'] - macd_sig).iloc[-1])
-        ema_cross = TechnicalIndicators.ema_cross(df)
-        bb_pos    = TechnicalIndicators.bollinger_position(prices[-1], bb_upper, bb_lower)
-        stoch_rsi = float(TechnicalIndicators.stoch_rsi(df).iloc[-1])
-        obv_delta = TechnicalIndicators.obv(df)
+        ema_cross = IndicadoresTecnicos.ema_cross(df)
+        bb_pos    = IndicadoresTecnicos.bollinger_position(prices[-1], bb_upper, bb_lower)
+        stoch_rsi = float(IndicadoresTecnicos.stoch_rsi(df).iloc[-1])
+        obv_delta = IndicadoresTecnicos.obv(df)
 
         signal = 0.0
         if rsi_val < 30:       signal += 0.25
@@ -297,7 +289,7 @@ def analyze_timeframe_signal(prices: list, volumes: list = None) -> dict:
         return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
 
 
-def multi_timeframe_confluence(symbol: str) -> dict:
+def confluencia_multi_timeframe(symbol: str) -> dict:
     """
     Descarga klines de 4 timeframes y calcula confluencia de señales.
     Devuelve señal ponderada y nivel de acuerdo entre timeframes (0-1).
@@ -318,10 +310,10 @@ def multi_timeframe_confluence(symbol: str) -> dict:
 
     for tf in TIMEFRAMES:
         limit = 100 if tf in ("1m", "15m") else 60
-        data  = fetch_binance_klines(symbol, limit=limit, interval=tf)
+        data  = obtener_velas_binance(symbol, limit=limit, interval=tf)
         if len(data["prices"]) < 20:
             continue
-        result = analyze_timeframe_signal(data["prices"], data["volumes"])
+        result = analizar_senal_timeframe(data["prices"], data["volumes"])
         tf_results[tf] = result
         w = TIMEFRAME_WEIGHTS.get(tf, 0.25)
         weighted_signal += result["signal"] * w
@@ -354,7 +346,7 @@ def multi_timeframe_confluence(symbol: str) -> dict:
 
 # ─── Historial de Binance (para pre-warm y endpoint /history) ─────────────────
 
-def fetch_binance_klines(symbol: str, limit: int = 100, interval: str = "1m") -> dict:
+def obtener_velas_binance(symbol: str, limit: int = 100, interval: str = "1m") -> dict:
     try:
         url = f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}"
         resp = requests.get(url, timeout=8)
@@ -384,7 +376,7 @@ def _evict_news_cache():
         oldest = sorted(NEWS_CACHE.items(), key=lambda x: x[1]["time"])
         for k, _ in oldest[:len(NEWS_CACHE) - NEWS_CACHE_MAX]: del NEWS_CACHE[k]
 
-def get_fallback_news(symbol):
+def noticias_fallback(symbol):
     coin = symbol.replace("USDT", "")
     return [
         (f"Market monitoring active for {coin}.", "system"),
@@ -392,7 +384,7 @@ def get_fallback_news(symbol):
         (f"Waiting for new social sentiment signals.", "system")
     ]
 
-def fetch_real_news(symbol):
+def obtener_noticias(symbol):
     coin = symbol.replace("USDT", "")
     now  = time.time()
     cached = NEWS_CACHE.get(coin)
@@ -413,15 +405,15 @@ def fetch_real_news(symbol):
                 for post in gr.json().get('results', [])[:3]:
                     t = post.get('title', '')
                     if len(t) > 5: headlines.append((t, post.get('domain', 'global_news')))
-        final = headlines or get_fallback_news(symbol)
+        final = headlines or noticias_fallback(symbol)
     except Exception as e:
         logger.debug(f"Error noticias {coin}: {e}")
-        final = get_fallback_news(symbol)
+        final = noticias_fallback(symbol)
     _evict_news_cache()
     NEWS_CACHE[coin] = {"data": final, "time": now}
     return final
 
-def analyze_headlines(raw_news):
+def analizar_titulares(raw_news):
     if not raw_news or not sentiment_model: return [], 0.0
     try:
         titles = [item[0] for item in raw_news]
@@ -443,7 +435,7 @@ def analyze_headlines(raw_news):
 
 # ─── Análisis principal ───────────────────────────────────────────────────────
 
-async def perform_analysis(symbol: str, price: float, history: list, volumes: list = None):
+async def realizar_analisis(symbol: str, price: float, history: list, volumes: list = None):
     price_bucket = int(price / max(price * 0.001, 1))
     cache_key = f"ai:{symbol}:{price_bucket}"
 
@@ -453,8 +445,8 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
             if cached: return json.loads(cached)
         except Exception: pass
 
-    news_data = fetch_real_news(symbol)
-    news_details, avg_sentiment = analyze_headlines(news_data)
+    news_data = obtener_noticias(symbol)
+    news_details, avg_sentiment = analizar_titulares(news_data)
 
     tech_score     = 0.0
     lstm_active    = False
@@ -467,21 +459,21 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
                 volumes = [1000.0] * len(history)
 
             df = pd.DataFrame({'Close': history, 'Volume': volumes})
-            df['RSI']  = TechnicalIndicators.rsi(df)
-            df['MACD'], macd_sig = TechnicalIndicators.macd(df)
-            bb_upper, bb_lower  = TechnicalIndicators.bollinger(df)
+            df['RSI']  = IndicadoresTecnicos.rsi(df)
+            df['MACD'], macd_sig = IndicadoresTecnicos.macd(df)
+            bb_upper, bb_lower  = IndicadoresTecnicos.bollinger(df)
             df.bfill(inplace=True)
             df.fillna(0, inplace=True)
 
             rsi_val    = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
             macd_hist  = float((df['MACD'] - macd_sig).iloc[-1])
-            ema_cross  = TechnicalIndicators.ema_cross(df)
-            bb_pos     = TechnicalIndicators.bollinger_position(price, bb_upper, bb_lower)
-            vol_spike  = TechnicalIndicators.volume_spike(volumes)
-            stoch_rsi  = float(TechnicalIndicators.stoch_rsi(df).iloc[-1])
-            atr_val    = TechnicalIndicators.atr(df)
-            vwap_val   = TechnicalIndicators.vwap(df)
-            obv_delta  = TechnicalIndicators.obv(df)
+            ema_cross  = IndicadoresTecnicos.ema_cross(df)
+            bb_pos     = IndicadoresTecnicos.bollinger_position(price, bb_upper, bb_lower)
+            vol_spike  = IndicadoresTecnicos.volume_spike(volumes)
+            stoch_rsi  = float(IndicadoresTecnicos.stoch_rsi(df).iloc[-1])
+            atr_val    = IndicadoresTecnicos.atr(df)
+            vwap_val   = IndicadoresTecnicos.vwap(df)
+            obv_delta  = IndicadoresTecnicos.obv(df)
 
             indicators = {
                 "rsi":           round(rsi_val, 1),
@@ -543,7 +535,7 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
     mtf = {}
     mtf_boost = 0.0
     try:
-        mtf = multi_timeframe_confluence(symbol)
+        mtf = confluencia_multi_timeframe(symbol)
         # Blendear señal MTF (ponderada por timeframes mayores) con tech_score
         if mtf.get("total", 0) >= 2:
             tech_score = tech_score * 0.55 + mtf["signal"] * 0.45
@@ -600,14 +592,14 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
 
 # ─── Pre-warm al arrancar ─────────────────────────────────────────────────────
 
-async def _pre_warm_cache(symbols: list):
+async def _precalentar_cache(symbols: list):
     logger.info(f"Pre-calentando caché para {symbols}...")
     for symbol in symbols:
         try:
-            data = fetch_binance_klines(symbol, limit=100)
+            data = obtener_velas_binance(symbol, limit=100)
             if len(data["prices"]) >= 5:
                 tick = data["prices"][-1]
-                await perform_analysis(symbol, tick, data["prices"], data["volumes"])
+                await realizar_analisis(symbol, tick, data["prices"], data["volumes"])
                 logger.info(f"Pre-warm OK: {symbol}")
             await asyncio.sleep(0.3)  # respetar rate limit Binance
         except Exception as e:
@@ -615,19 +607,19 @@ async def _pre_warm_cache(symbols: list):
 
 @app.on_event("startup")
 async def startup_pre_warm():
-    asyncio.create_task(_pre_warm_cache(WARM_SYMBOLS))
+    asyncio.create_task(_precalentar_cache(WARM_SYMBOLS))
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post("/analyze")
-async def analyze(request: MarketRequest):
-    return await perform_analysis(
+async def analyze(request: PeticionMercado):
+    return await realizar_analisis(
         request.symbol, request.price, request.history, request.volumes
     )
 
 @app.post("/analyze-batch")
-async def analyze_batch(request: BatchRequest):
+async def analyze_batch(request: PeticionLote):
     """Analiza múltiples símbolos en una sola llamada."""
     results = {}
     for symbol in request.symbols:
@@ -637,7 +629,7 @@ async def analyze_batch(request: BatchRequest):
         volumes = (request.volumes  or {}).get(symbol, [])
         if price <= 0: continue
         try:
-            results[symbol] = await perform_analysis(symbol, price, history, volumes)
+            results[symbol] = await realizar_analisis(symbol, price, history, volumes)
         except Exception as e:
             logger.warning(f"Error en batch para {symbol}: {e}")
     return results
@@ -647,7 +639,7 @@ async def get_history(symbol: str, limit: int = 100, interval: str = "1m"):
     """Obtiene historial de velas de Binance directamente."""
     symbol = symbol.upper().strip()
     limit  = max(10, min(limit, 500))
-    data   = fetch_binance_klines(symbol, limit=limit, interval=interval)
+    data   = obtener_velas_binance(symbol, limit=limit, interval=interval)
     if not data["prices"]:
         raise HTTPException(status_code=404, detail=f"Sin datos para {symbol}")
     return {"symbol": symbol, **data}
@@ -688,8 +680,8 @@ async def get_news(symbols: str = "BTC,ETH,SOL,DOGE,PEPE", limit: int = 20):
     for coin in symbol_list[:8]:  # máximo 8 para respetar rate limits
         symbol = coin + "USDT" if not coin.endswith("USDT") else coin
         try:
-            news_data = fetch_real_news(symbol)
-            details, _ = analyze_headlines(news_data)
+            news_data = obtener_noticias(symbol)
+            details, _ = analizar_titulares(news_data)
             for item in details:
                 if item["title"] not in seen_titles:
                     seen_titles.add(item["title"])
@@ -708,8 +700,8 @@ async def get_trending_radar():
         try:
             # Intentar usar historial real si está en caché
             cached_key = f"ai:{m}:"
-            news_data = fetch_real_news(m)
-            news_details, avg_sentiment = analyze_headlines(news_data)
+            news_data = obtener_noticias(m)
+            news_details, avg_sentiment = analizar_titulares(news_data)
             sentiment_label = "BULLISH" if avg_sentiment > 0.05 else "BEARISH" if avg_sentiment < -0.05 else "NEUTRAL"
             conf = int(min(75, max(40, abs(avg_sentiment) * 50 + 45)))
             results.append({
@@ -735,7 +727,7 @@ async def get_multi_timeframe(symbol: str):
     """Devuelve el análisis de confluencia multi-timeframe para un símbolo."""
     symbol = symbol.upper().strip()
     try:
-        mtf = multi_timeframe_confluence(symbol)
+        mtf = confluencia_multi_timeframe(symbol)
         return mtf
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
