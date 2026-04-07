@@ -1,6 +1,9 @@
 import os
 import logging
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -99,6 +102,182 @@ if _has_ml:
         logger.info("LSTM cargado")
     except Exception as e:
         logger.warning(f"LSTM no disponible: {e}")
+
+
+# ─── Gestor de reentrenamiento LSTM ───────────────────────────────────────────
+
+class GestorReentrenamiento:
+    """
+    Gestiona el ciclo de vida del modelo LSTM:
+    fine-tuning periódico con datos recientes de Binance,
+    guardado atómico y exposición del estado vía API.
+    """
+
+    RUTA_MODELO  = 'models/crypto_lstm_model_v2.h5'
+    RUTA_SCALER  = 'models/scaler_v2.gz'
+    SEQ_LEN      = 60          # ventana de entrada del LSTM
+    FEATURES     = ['Close', 'Volume', 'RSI', 'MACD']
+    INTERVALO_H  = 24          # horas entre reentrenamientos automáticos
+    SIMBOLO_BASE = 'BTCUSDT'   # símbolo de referencia para el entrenamiento
+
+    def __init__(self):
+        self.estado: str               = 'inactivo'   # inactivo | entrenando | error
+        self.ultimo_entrenamiento: Optional[str] = None
+        self.metricas: dict            = {}
+        self._lock                     = threading.Lock()
+        self._executor                 = ThreadPoolExecutor(max_workers=1)
+
+    # ── Construcción de arquitectura ──────────────────────────────────────────
+
+    def _construir_arquitectura(self) -> 'tf.keras.Model':
+        """Define la arquitectura LSTM v2: (SEQ_LEN, 4) → 1 precio."""
+        if not _has_ml:
+            raise RuntimeError("TensorFlow no disponible")
+        modelo = tf.keras.Sequential([
+            tf.keras.layers.LSTM(128, return_sequences=True,
+                                 input_shape=(self.SEQ_LEN, len(self.FEATURES))),
+            tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.LSTM(64),
+            tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(32, activation='relu'),
+            tf.keras.layers.Dense(1),
+        ])
+        modelo.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        return modelo
+
+    # ── Preparación de datos ──────────────────────────────────────────────────
+
+    def _preparar_datos(self, symbol: str, limit: int = 1000, interval: str = '1h'):
+        """
+        Descarga velas de Binance, calcula RSI y MACD,
+        escala y construye secuencias (X, y) para el LSTM.
+        Retorna (X, y, scaler_nuevo) o lanza excepción.
+        """
+        from sklearn.preprocessing import MinMaxScaler
+
+        url  = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+        resp = requests.get(url, timeout=15)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Binance devolvió {resp.status_code}")
+
+        rows = resp.json()
+        if len(rows) < self.SEQ_LEN + 30:
+            raise RuntimeError(f"Datos insuficientes: {len(rows)} velas")
+
+        df = pd.DataFrame(rows, columns=[
+            'ts','open','high','low','close','vol',
+            'close_ts','quote_vol','trades','taker_base','taker_quote','ignore'
+        ])
+        df['Close']  = df['close'].astype(float)
+        df['Volume'] = df['vol'].astype(float)
+
+        # Indicadores
+        df['RSI']  = IndicadoresTecnicos.rsi(df)
+        df['MACD'], macd_sig = IndicadoresTecnicos.macd(df)
+        df.bfill(inplace=True)
+        df.fillna(0, inplace=True)
+
+        data = df[self.FEATURES].values
+
+        scaler_nuevo = MinMaxScaler()
+        data_scaled  = scaler_nuevo.fit_transform(data)
+
+        X, y = [], []
+        for i in range(self.SEQ_LEN, len(data_scaled)):
+            X.append(data_scaled[i - self.SEQ_LEN:i])
+            y.append(data_scaled[i, 0])   # Close normalizado
+
+        return np.array(X), np.array(y), scaler_nuevo
+
+    # ── Lógica de entrenamiento (ejecutada en hilo aparte) ────────────────────
+
+    def _ejecutar_entrenamiento(self, symbol: str, epochs: int, desde_cero: bool):
+        global lstm_model, scaler
+        try:
+            with self._lock:
+                self.estado = 'entrenando'
+
+            logger.info(f"Reentrenamiento iniciado — symbol={symbol} epochs={epochs} desde_cero={desde_cero}")
+            X, y, scaler_nuevo = self._preparar_datos(symbol)
+
+            split = int(len(X) * 0.85)
+            X_train, X_val = X[:split], X[split:]
+            y_train, y_val = y[:split], y[split:]
+
+            if desde_cero or lstm_model is None:
+                modelo = self._construir_arquitectura()
+                logger.info("Arquitectura LSTM construida desde cero")
+            else:
+                modelo = lstm_model   # fine-tune sobre el modelo actual
+
+            historia = modelo.fit(
+                X_train, y_train,
+                epochs=epochs,
+                batch_size=32,
+                validation_data=(X_val, y_val),
+                verbose=0,
+            )
+
+            # Guardado atómico: primero a temporal, luego reemplazar
+            ruta_tmp = self.RUTA_MODELO + '.tmp'
+            modelo.save(ruta_tmp)
+            os.replace(ruta_tmp, self.RUTA_MODELO)
+            joblib.dump(scaler_nuevo, self.RUTA_SCALER)
+
+            # Actualizar referencias globales
+            lstm_model = modelo
+            scaler     = scaler_nuevo
+
+            metricas = {
+                'loss_final':     round(float(historia.history['loss'][-1]), 6),
+                'val_loss_final': round(float(historia.history['val_loss'][-1]), 6),
+                'epochs':         epochs,
+                'muestras':       len(X_train),
+            }
+            with self._lock:
+                self.estado               = 'inactivo'
+                self.ultimo_entrenamiento = datetime.utcnow().isoformat() + 'Z'
+                self.metricas             = metricas
+
+            logger.info(f"Reentrenamiento completado — {metricas}")
+
+        except Exception as e:
+            logger.error(f"Error en reentrenamiento: {e}")
+            with self._lock:
+                self.estado  = 'error'
+                self.metricas = {'error': str(e)}
+
+    # ── API pública ───────────────────────────────────────────────────────────
+
+    def lanzar(self, symbol: str = SIMBOLO_BASE, epochs: int = 5, desde_cero: bool = False):
+        """Lanza el entrenamiento en un hilo de fondo (no bloqueante)."""
+        with self._lock:
+            if self.estado == 'entrenando':
+                return False   # ya hay uno en curso
+        self._executor.submit(self._ejecutar_entrenamiento, symbol, epochs, desde_cero)
+        return True
+
+    def estado_actual(self) -> dict:
+        with self._lock:
+            return {
+                'estado':               self.estado,
+                'ultimo_entrenamiento': self.ultimo_entrenamiento,
+                'metricas':             self.metricas,
+                'lstm_cargado':         lstm_model is not None,
+            }
+
+
+gestor_reentrenamiento = GestorReentrenamiento()
+
+
+async def _ciclo_reentrenamiento_automatico():
+    """Lanza un reentrenamiento cada INTERVALO_H horas en segundo plano."""
+    intervalo_s = GestorReentrenamiento.INTERVALO_H * 3600
+    await asyncio.sleep(intervalo_s)   # primera vez: esperar un ciclo completo
+    while True:
+        logger.info("Reentrenamiento automático — iniciando ciclo periódico")
+        gestor_reentrenamiento.lanzar()
+        await asyncio.sleep(intervalo_s)
 
 
 # ─── Esquemas ─────────────────────────────────────────────────────────────────
@@ -608,6 +787,7 @@ async def _precalentar_cache(symbols: list):
 @app.on_event("startup")
 async def startup_pre_warm():
     asyncio.create_task(_precalentar_cache(WARM_SYMBOLS))
+    asyncio.create_task(_ciclo_reentrenamiento_automatico())
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -722,6 +902,30 @@ async def get_trending_radar():
                             "alert": "MEDIUM", "lstm_active": False, "news_details": []})
     return results
 
+@app.post("/retrain")
+async def retrain(
+    symbol:     str  = GestorReentrenamiento.SIMBOLO_BASE,
+    epochs:     int  = 5,
+    desde_cero: bool = False,
+):
+    """
+    Lanza el reentrenamiento del LSTM en segundo plano.
+    - symbol: símbolo de Binance para obtener datos (default BTCUSDT)
+    - epochs: épocas de fine-tuning (default 5)
+    - desde_cero: reconstruir arquitectura completa (default false)
+    """
+    symbol = symbol.upper().strip()
+    epochs = max(1, min(epochs, 20))
+    ok = gestor_reentrenamiento.lanzar(symbol, epochs, desde_cero)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Ya hay un reentrenamiento en curso")
+    return {"mensaje": "Reentrenamiento iniciado", "symbol": symbol, "epochs": epochs}
+
+@app.get("/retrain/status")
+async def retrain_status():
+    """Estado actual del gestor de reentrenamiento."""
+    return gestor_reentrenamiento.estado_actual()
+
 @app.get("/multi-timeframe/{symbol}")
 async def get_multi_timeframe(symbol: str):
     """Devuelve el análisis de confluencia multi-timeframe para un símbolo."""
@@ -734,14 +938,16 @@ async def get_multi_timeframe(symbol: str):
 
 @app.get("/health")
 async def health():
+    estado_retrain = gestor_reentrenamiento.estado_actual()
     return {
-        "status":       "ok",
-        "redis":        redis_client is not None,
-        "lstm":         lstm_model is not None,
-        "finbert":      sentiment_model is not None,
-        "news_api":     bool(CRYPTO_PANIC_KEY),
-        "news_cache":   len(NEWS_CACHE),
-        "models_ready": lstm_model is not None or sentiment_model is not None
+        "status":               "ok",
+        "redis":                redis_client is not None,
+        "lstm":                 lstm_model is not None,
+        "finbert":              sentiment_model is not None,
+        "news_api":             bool(CRYPTO_PANIC_KEY),
+        "news_cache":           len(NEWS_CACHE),
+        "models_ready":         lstm_model is not None or sentiment_model is not None,
+        "reentrenamiento":      estado_retrain,
     }
 
 if __name__ == "__main__":
