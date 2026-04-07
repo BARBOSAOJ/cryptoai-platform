@@ -134,88 +134,164 @@ MTF_CACHE_TTL      = 60   # segundos en Redis para datos MTF
 
 # ─── Indicadores técnicos ─────────────────────────────────────────────────────
 
-def calculate_rsi(data, window=14):
-    if not _has_ml: return data['Close'] * 0
-    delta = data['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+class TechnicalIndicators:
+    """Todos los cálculos de indicadores técnicos agrupados como métodos estáticos."""
 
-def calculate_macd(data, short=12, long=26, signal=9):
-    if not _has_ml: return data['Close'] * 0, data['Close'] * 0
-    s_ema = data['Close'].ewm(span=short, adjust=False).mean()
-    l_ema = data['Close'].ewm(span=long,  adjust=False).mean()
-    macd  = s_ema - l_ema
-    sig   = macd.ewm(span=signal, adjust=False).mean()
-    return macd, sig
+    @staticmethod
+    def rsi(data: 'pd.DataFrame', window: int = 14) -> 'pd.Series':
+        if not _has_ml: return data['Close'] * 0
+        delta = data['Close'].diff()
+        gain  = delta.where(delta > 0, 0).rolling(window).mean()
+        loss  = (-delta.where(delta < 0, 0)).rolling(window).mean()
+        return 100 - (100 / (1 + gain / loss))
 
-def calculate_bollinger(data, window=20, num_std=2):
-    if not _has_ml: return data['Close'] * 0, data['Close'] * 0
-    sma = data['Close'].rolling(window).mean()
-    std = data['Close'].rolling(window).std()
-    return sma + num_std * std, sma - num_std * std
+    @staticmethod
+    def stoch_rsi(data: 'pd.DataFrame', rsi_window: int = 14, stoch_window: int = 14) -> 'pd.Series':
+        """Stochastic RSI — más sensible que RSI clásico, ideal para crypto."""
+        if not _has_ml: return data['Close'] * 0
+        rsi  = TechnicalIndicators.rsi(data, rsi_window)
+        rsi_min = rsi.rolling(stoch_window).min()
+        rsi_max = rsi.rolling(stoch_window).max()
+        return (rsi - rsi_min) / (rsi_max - rsi_min + 1e-9)
 
-def calculate_ema_cross(data, fast=9, slow=21):
-    if not _has_ml: return 0.0
-    ema_f = data['Close'].ewm(span=fast, adjust=False).mean()
-    ema_s = data['Close'].ewm(span=slow, adjust=False).mean()
-    return float(ema_f.iloc[-1] - ema_s.iloc[-1])
+    @staticmethod
+    def macd(data: 'pd.DataFrame', short: int = 12, long: int = 26, signal: int = 9):
+        if not _has_ml: return data['Close'] * 0, data['Close'] * 0
+        s_ema = data['Close'].ewm(span=short,  adjust=False).mean()
+        l_ema = data['Close'].ewm(span=long,   adjust=False).mean()
+        macd  = s_ema - l_ema
+        sig   = macd.ewm(span=signal, adjust=False).mean()
+        return macd, sig
 
-def bollinger_position(price, upper, lower):
-    """Retorna: -1 bajo banda inferior, +1 sobre banda superior, 0 dentro"""
-    try:
-        u, l = float(upper.iloc[-1]), float(lower.iloc[-1])
-        if price > u:  return 1.0
-        if price < l:  return -1.0
-        mid = (u + l) / 2
-        return (price - mid) / (u - mid + 1e-9)
-    except Exception:
-        return 0.0
+    @staticmethod
+    def bollinger(data: 'pd.DataFrame', window: int = 20, num_std: float = 2):
+        if not _has_ml: return data['Close'] * 0, data['Close'] * 0
+        sma = data['Close'].rolling(window).mean()
+        std = data['Close'].rolling(window).std()
+        return sma + num_std * std, sma - num_std * std
 
-def volume_spike(volumes, window=20):
-    if not _has_ml or len(volumes) < window + 1: return False
-    try:
-        arr = np.array(volumes)
-        avg = arr[-window-1:-1].mean()
-        return bool(arr[-1] > avg * 2.0)
-    except Exception:
-        return False
+    @staticmethod
+    def ema_cross(data: 'pd.DataFrame', fast: int = 9, slow: int = 21) -> float:
+        if not _has_ml: return 0.0
+        ema_f = data['Close'].ewm(span=fast, adjust=False).mean()
+        ema_s = data['Close'].ewm(span=slow, adjust=False).mean()
+        return float(ema_f.iloc[-1] - ema_s.iloc[-1])
+
+    @staticmethod
+    def atr(data: 'pd.DataFrame', window: int = 14) -> float:
+        """Average True Range — mide volatilidad real del mercado."""
+        if not _has_ml or 'High' not in data.columns or 'Low' not in data.columns:
+            # Estimación con solo Close si no hay OHLC
+            std = data['Close'].rolling(window).std()
+            return float(std.iloc[-1]) if not std.empty else 0.0
+        high, low, close_prev = data['High'], data['Low'], data['Close'].shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - close_prev).abs(),
+            (low  - close_prev).abs()
+        ], axis=1).max(axis=1)
+        return float(tr.rolling(window).mean().iloc[-1])
+
+    @staticmethod
+    def vwap(data: 'pd.DataFrame') -> float:
+        """Volume Weighted Average Price — precio de referencia institucional."""
+        if not _has_ml or 'Volume' not in data.columns: return 0.0
+        try:
+            tp  = data['Close']  # typical price (simplificado con Close)
+            cum_vol = data['Volume'].cumsum()
+            cum_tp  = (tp * data['Volume']).cumsum()
+            vwap_series = cum_tp / (cum_vol + 1e-9)
+            return float(vwap_series.iloc[-1])
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def obv(data: 'pd.DataFrame') -> float:
+        """On-Balance Volume — confirma tendencia con flujo de volumen."""
+        if not _has_ml or 'Volume' not in data.columns: return 0.0
+        try:
+            direction = np.sign(data['Close'].diff().fillna(0))
+            obv_vals  = (direction * data['Volume']).cumsum()
+            # Normalizar: retorna el cambio relativo en las últimas 5 velas
+            if len(obv_vals) < 5: return 0.0
+            recent = float(obv_vals.iloc[-1])
+            prev   = float(obv_vals.iloc[-5])
+            return round((recent - prev) / (abs(prev) + 1e-9), 4)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def bollinger_position(price: float, upper: 'pd.Series', lower: 'pd.Series') -> float:
+        """Posición relativa dentro de las bandas: -1 (inferior) a +1 (superior)."""
+        try:
+            u, l = float(upper.iloc[-1]), float(lower.iloc[-1])
+            if price > u:  return 1.0
+            if price < l:  return -1.0
+            mid = (u + l) / 2
+            return (price - mid) / (u - mid + 1e-9)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def volume_spike(volumes: list, window: int = 20) -> bool:
+        if not _has_ml or len(volumes) < window + 1: return False
+        try:
+            arr = np.array(volumes)
+            avg = arr[-window-1:-1].mean()
+            return bool(arr[-1] > avg * 2.0)
+        except Exception:
+            return False
+
+
+# Aliases para compatibilidad interna (evita renombrar todas las llamadas)
+def calculate_rsi(data, window=14):        return TechnicalIndicators.rsi(data, window)
+def calculate_macd(data, **kw):            return TechnicalIndicators.macd(data, **kw)
+def calculate_bollinger(data, **kw):       return TechnicalIndicators.bollinger(data, **kw)
+def calculate_ema_cross(data, **kw):       return TechnicalIndicators.ema_cross(data, **kw)
+def bollinger_position(p, upper, lower):   return TechnicalIndicators.bollinger_position(p, upper, lower)
+def volume_spike(volumes, window=20):      return TechnicalIndicators.volume_spike(volumes, window)
 
 
 # ─── Análisis por timeframe individual ────────────────────────────────────────
 
 def analyze_timeframe_signal(prices: list, volumes: list = None) -> dict:
-    """Calcula señal técnica (RSI, MACD, EMA, BB) para un timeframe dado."""
+    """Calcula señal técnica completa (RSI, StochRSI, MACD, EMA, BB, OBV) para un timeframe."""
     if not _has_ml or len(prices) < 20:
         return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
     try:
         if not volumes or len(volumes) != len(prices):
             volumes = [1000.0] * len(prices)
         df = pd.DataFrame({'Close': prices, 'Volume': volumes})
-        df['RSI']  = calculate_rsi(df)
-        df['MACD'], macd_sig = calculate_macd(df)
-        bb_upper, bb_lower   = calculate_bollinger(df)
+        df['RSI']  = TechnicalIndicators.rsi(df)
+        df['MACD'], macd_sig = TechnicalIndicators.macd(df)
+        bb_upper, bb_lower   = TechnicalIndicators.bollinger(df)
         df.bfill(inplace=True); df.fillna(0, inplace=True)
 
         rsi_val   = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
         macd_hist = float((df['MACD'] - macd_sig).iloc[-1])
-        ema_cross = calculate_ema_cross(df)
-        bb_pos    = bollinger_position(prices[-1], bb_upper, bb_lower)
+        ema_cross = TechnicalIndicators.ema_cross(df)
+        bb_pos    = TechnicalIndicators.bollinger_position(prices[-1], bb_upper, bb_lower)
+        stoch_rsi = float(TechnicalIndicators.stoch_rsi(df).iloc[-1])
+        obv_delta = TechnicalIndicators.obv(df)
 
         signal = 0.0
-        if rsi_val < 30:   signal += 0.30
-        elif rsi_val > 70: signal -= 0.30
-        if macd_hist > 0:  signal += 0.20
-        elif macd_hist < 0: signal -= 0.20
-        if ema_cross > 0:  signal += 0.20
-        elif ema_cross < 0: signal -= 0.20
-        if bb_pos < -0.5:  signal += 0.15
-        elif bb_pos > 0.5: signal -= 0.15
+        if rsi_val < 30:       signal += 0.25
+        elif rsi_val > 70:     signal -= 0.25
+        if stoch_rsi < 0.20:   signal += 0.12
+        elif stoch_rsi > 0.80: signal -= 0.12
+        if macd_hist > 0:      signal += 0.18
+        elif macd_hist < 0:    signal -= 0.18
+        if ema_cross > 0:      signal += 0.15
+        elif ema_cross < 0:    signal -= 0.15
+        if bb_pos < -0.5:      signal += 0.12
+        elif bb_pos > 0.5:     signal -= 0.12
+        if obv_delta > 0.05:   signal += 0.08
+        elif obv_delta < -0.05: signal -= 0.08
 
         trend = "BULLISH" if signal > 0.08 else "BEARISH" if signal < -0.08 else "NEUTRAL"
         return {"signal": round(signal, 3), "rsi": round(rsi_val, 1), "trend": trend,
-                "macd_hist": round(macd_hist, 6), "ema_cross": round(ema_cross, 4)}
+                "stoch_rsi": round(stoch_rsi, 3), "macd_hist": round(macd_hist, 6),
+                "ema_cross": round(ema_cross, 4), "obv_delta": round(obv_delta, 4)}
     except Exception as e:
         logger.debug(f"Error analizando timeframe: {e}")
         return {"signal": 0.0, "rsi": 50.0, "trend": "NEUTRAL", "macd_hist": 0.0, "ema_cross": 0.0}
@@ -391,36 +467,60 @@ async def perform_analysis(symbol: str, price: float, history: list, volumes: li
                 volumes = [1000.0] * len(history)
 
             df = pd.DataFrame({'Close': history, 'Volume': volumes})
-            df['RSI']  = calculate_rsi(df)
-            df['MACD'], macd_sig = calculate_macd(df)
-            bb_upper, bb_lower  = calculate_bollinger(df)
+            df['RSI']  = TechnicalIndicators.rsi(df)
+            df['MACD'], macd_sig = TechnicalIndicators.macd(df)
+            bb_upper, bb_lower  = TechnicalIndicators.bollinger(df)
             df.bfill(inplace=True)
             df.fillna(0, inplace=True)
 
-            rsi_val   = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
-            macd_hist = float((df['MACD'] - macd_sig).iloc[-1])
-            ema_cross = calculate_ema_cross(df)
-            bb_pos    = bollinger_position(price, bb_upper, bb_lower)
-            vol_spike = volume_spike(volumes)
+            rsi_val    = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
+            macd_hist  = float((df['MACD'] - macd_sig).iloc[-1])
+            ema_cross  = TechnicalIndicators.ema_cross(df)
+            bb_pos     = TechnicalIndicators.bollinger_position(price, bb_upper, bb_lower)
+            vol_spike  = TechnicalIndicators.volume_spike(volumes)
+            stoch_rsi  = float(TechnicalIndicators.stoch_rsi(df).iloc[-1])
+            atr_val    = TechnicalIndicators.atr(df)
+            vwap_val   = TechnicalIndicators.vwap(df)
+            obv_delta  = TechnicalIndicators.obv(df)
 
             indicators = {
-                "rsi": round(rsi_val, 1),
-                "macd_histogram": round(macd_hist, 4),
-                "ema_cross": round(ema_cross, 2),
-                "bb_position": round(bb_pos, 2),
-                "volume_spike": vol_spike
+                "rsi":           round(rsi_val, 1),
+                "stoch_rsi":     round(stoch_rsi, 3),
+                "macd_histogram":round(macd_hist, 4),
+                "ema_cross":     round(ema_cross, 2),
+                "bb_position":   round(bb_pos, 2),
+                "atr":           round(atr_val, 6),
+                "vwap":          round(vwap_val, 6),
+                "obv_delta":     round(obv_delta, 4),
+                "volume_spike":  vol_spike,
             }
 
             tech_signal = 0.0
-            if rsi_val < 30:   tech_signal += 0.30
-            elif rsi_val > 70: tech_signal -= 0.30
-            if macd_hist > 0:  tech_signal += 0.20
-            elif macd_hist < 0: tech_signal -= 0.20
-            if ema_cross > 0:  tech_signal += 0.20
-            elif ema_cross < 0: tech_signal -= 0.20
-            if bb_pos < -0.5:  tech_signal += 0.15
-            elif bb_pos > 0.5: tech_signal -= 0.15
-            if vol_spike:      tech_signal *= 1.3
+            # RSI clásico
+            if rsi_val < 30:   tech_signal += 0.25
+            elif rsi_val > 70: tech_signal -= 0.25
+            # Stoch RSI (más sensible — pesos menores para evitar ruido)
+            if stoch_rsi < 0.20:   tech_signal += 0.15
+            elif stoch_rsi > 0.80: tech_signal -= 0.15
+            # MACD
+            if macd_hist > 0:  tech_signal += 0.18
+            elif macd_hist < 0: tech_signal -= 0.18
+            # EMA cross
+            if ema_cross > 0:  tech_signal += 0.15
+            elif ema_cross < 0: tech_signal -= 0.15
+            # Bollinger
+            if bb_pos < -0.5:  tech_signal += 0.12
+            elif bb_pos > 0.5: tech_signal -= 0.12
+            # VWAP — precio por encima/debajo del VWAP indica presión compradora/vendedora
+            if vwap_val > 0:
+                vwap_diff = (price - vwap_val) / (vwap_val + 1e-9)
+                if vwap_diff < -0.005:  tech_signal += 0.10  # precio bajo VWAP = posible rebote
+                elif vwap_diff > 0.005: tech_signal -= 0.05  # precio alto VWAP = posible rechazo
+            # OBV — confirma o contradice la tendencia
+            if obv_delta > 0.05:   tech_signal += 0.10
+            elif obv_delta < -0.05: tech_signal -= 0.10
+            # Amplificar con volumen anómalo
+            if vol_spike: tech_signal *= 1.25
 
             if lstm_model and scaler and len(history) >= 60:
                 data_matrix = df[['Close', 'Volume', 'RSI', 'MACD']].values[-60:]
