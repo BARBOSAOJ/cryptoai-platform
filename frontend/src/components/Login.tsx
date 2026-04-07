@@ -99,7 +99,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-0.8px', margin: '0 0 6px' }}>
             {isRegistering ? 'Crear cuenta' : 'Bienvenido'}
           </h1>
-          <p style={{ fontSize: '13px', color: '#333', margin: 0 }}>
+          <p style={{ fontSize: '13px', color: '#2c4268', margin: 0 }}>
             {isRegistering ? 'Regístrate para acceder al terminal' : 'Accede a tu terminal de trading'}
           </p>
         </div>
@@ -132,7 +132,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
         <p
           onClick={() => { setIsRegistering(!isRegistering); setError('') }}
-          style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#333', cursor: 'pointer' }}
+          style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#2c4268', cursor: 'pointer' }}
         >
           {isRegistering ? '¿Ya tienes cuenta? ' : '¿No tienes cuenta? '}
           <span style={{ color: '#fff' }}>{isRegistering ? 'Inicia sesión' : 'Regístrate'}</span>
@@ -143,12 +143,12 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 }
 
 const wrapStyle: React.CSSProperties = {
-  height: '100vh', width: '100vw', background: '#000',
+  height: '100vh', width: '100vw', background: '#060d1a',
   display: 'flex', justifyContent: 'center', alignItems: 'center',
   fontFamily: 'Inter, sans-serif'
 }
 const cardStyle: React.CSSProperties = {
-  background: '#080808', border: '1px solid #111', borderRadius: '20px',
+  background: '#091220', border: '1px solid #111e35', borderRadius: '20px',
   padding: '36px', width: '360px'
 }
 const brandRowStyle: React.CSSProperties = {
@@ -159,10 +159,10 @@ const logoStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center'
 }
 const labelStyle: React.CSSProperties = {
-  fontSize: '11px', color: '#333', marginBottom: '6px', fontWeight: 500
+  fontSize: '11px', color: '#2c4268', marginBottom: '6px', fontWeight: 500
 }
 const fieldStyle: React.CSSProperties = {
-  background: '#0d0d0d', border: '1px solid #1a1a1a', color: '#fff',
+  background: '#0d1730', border: '1px solid #1a1a1a', color: '#fff',
   padding: '11px 14px', borderRadius: '10px', fontSize: '13px',
   width: '100%', fontFamily: 'Inter, sans-serif', outline: 'none',
   boxSizing: 'border-box'

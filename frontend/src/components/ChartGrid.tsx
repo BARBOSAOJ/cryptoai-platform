@@ -20,7 +20,7 @@ export const ChartGrid = ({ layout, mainCoin, gridCoins, marketData, aiInsights 
       gridTemplateColumns: layout === 'SINGLE' ? '1fr' : '1fr 1fr', 
       gridTemplateRows: layout === 'SINGLE' ? '1fr' : '1fr 1fr', 
       gap: '1px', 
-      background: '#000', // Líneas negras entre gráficos
+      background: '#060d1a', // Líneas negras entre gráficos
       overflow: 'hidden'
     }
   };
@@ -34,7 +34,7 @@ export const ChartGrid = ({ layout, mainCoin, gridCoins, marketData, aiInsights 
         <ChartCard 
           key={`${coin.id}-${index}`}
           coin={coin}
-          price={marketData[coin.id]}
+          price={marketData[coin.id]?.price}
           aiData={aiInsights[coin.id]}
         />
       ))}

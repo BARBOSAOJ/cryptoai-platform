@@ -52,7 +52,7 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarPr
 }
 
 const navStyle: React.CSSProperties = {
-  width: '62px', background: '#060606', borderRight: '1px solid #111',
+  width: '62px', background: '#07101e', borderRight: '1px solid #111e35',
   display: 'flex', flexDirection: 'column', alignItems: 'center',
   padding: '18px 0', gap: '4px'
 }
@@ -63,8 +63,8 @@ const brandStyle: React.CSSProperties = {
 const navItemStyle = (active: boolean): React.CSSProperties => ({
   width: '42px', height: '42px', borderRadius: '11px',
   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-  color: active ? '#fff' : '#2a2a2a',
-  background: active ? '#141414' : 'transparent',
+  color: active ? '#fff' : '#243858',
+  background: active ? '#14203c' : 'transparent',
   border: active ? '1px solid #1e1e1e' : '1px solid transparent',
   transition: 'all 0.15s'
 })

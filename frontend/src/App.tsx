@@ -214,7 +214,7 @@ export default function App() {
   return (
     <div style={{
       display: 'flex', height: '100vh', width: '100vw',
-      background: '#080808', color: '#e0e0e0', overflow: 'hidden',
+      background: '#091220', color: '#c8d8ec', overflow: 'hidden',
       transition: '0.3s',
       boxShadow: alertFlash ? 'inset 0 0 100px rgba(8, 153, 129, 0.4)' : 'none'
     }}>

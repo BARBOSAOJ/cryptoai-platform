@@ -11,7 +11,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
     <div style={wrapStyle}>
       <div style={{ marginBottom: '28px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 4px' }}>Configuración</h2>
-        <p style={{ fontSize: '12px', color: '#333', margin: 0 }}>Ajustes del terminal de trading</p>
+        <p style={{ fontSize: '12px', color: '#2c4268', margin: 0 }}>Ajustes del terminal de trading</p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '560px' }}>
@@ -23,7 +23,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <div style={iconWrapStyle}><Zap size={16} strokeWidth={1.75} color="#fff" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Velocidad de escaneo</div>
-            <div style={{ fontSize: '11px', color: '#333' }}>Frecuencia de análisis de la red neuronal</div>
+            <div style={{ fontSize: '11px', color: '#2c4268' }}>Frecuencia de análisis de la red neuronal</div>
           </div>
           <select value={currentInterval} onChange={e => setRefreshInterval(parseInt(e.target.value))} style={selectStyle}>
             <option value={5000}>Conservador · 5s</option>
@@ -37,7 +37,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <div style={{ ...iconWrapStyle, background: '#0a0a1a' }}><Brain size={16} strokeWidth={1.75} color="#818cf8" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Estado modelos IA</div>
-            <div style={{ fontSize: '11px', color: '#333' }}>LSTM (predicción técnica) + FinBERT (sentimiento)</div>
+            <div style={{ fontSize: '11px', color: '#2c4268' }}>LSTM (predicción técnica) + FinBERT (sentimiento)</div>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <ModelBadge label="LSTM"    active={aiHealth?.lstm    ?? null} />
@@ -52,7 +52,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <div style={{ ...iconWrapStyle, background: '#0a1a0a' }}><Shield size={16} strokeWidth={1.75} color="#00d060" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Seguridad</div>
-            <div style={{ fontSize: '11px', color: '#333' }}>Encriptación RSA-2048 activa</div>
+            <div style={{ fontSize: '11px', color: '#2c4268' }}>Encriptación RSA-2048 activa</div>
           </div>
           <span style={activeBadgeStyle}>Activo</span>
         </div>
@@ -61,7 +61,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <div style={{ ...iconWrapStyle, background: '#0a0a1a' }}><Cpu size={16} strokeWidth={1.75} color="#818cf8" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Fuente de datos</div>
-            <div style={{ fontSize: '11px', color: '#333' }}>Binance WebSocket · Tiempo real</div>
+            <div style={{ fontSize: '11px', color: '#2c4268' }}>Binance WebSocket · Tiempo real</div>
           </div>
           <span style={activeBadgeStyle}>Activo</span>
         </div>
@@ -70,7 +70,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <div style={{ ...iconWrapStyle, background: '#0a1010' }}><Database size={16} strokeWidth={1.75} color="#2dd4bf" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>Persistencia</div>
-            <div style={{ fontSize: '11px', color: '#333' }}>PostgreSQL · Trades almacenados en base de datos</div>
+            <div style={{ fontSize: '11px', color: '#2c4268' }}>PostgreSQL · Trades almacenados en base de datos</div>
           </div>
           <span style={activeBadgeStyle}>Activo</span>
         </div>
@@ -81,9 +81,9 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
 }
 
 function ModelBadge({ label, active }: { label: string; active: boolean | null }) {
-  const color = active === null ? '#333' : active ? '#00d060' : '#ff3b3b'
-  const bg    = active === null ? '#0a0a0a' : active ? 'rgba(0,208,96,0.08)' : 'rgba(255,59,59,0.08)'
-  const border = active === null ? '#1a1a1a' : active ? 'rgba(0,208,96,0.2)' : 'rgba(255,59,59,0.2)'
+  const color = active === null ? '#2c4268' : active ? '#00d060' : '#ff3b3b'
+  const bg    = active === null ? '#0b1424' : active ? 'rgba(0,208,96,0.08)' : 'rgba(255,59,59,0.08)'
+  const border = active === null ? '#1a2840' : active ? 'rgba(0,208,96,0.2)' : 'rgba(255,59,59,0.2)'
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color, background: bg, border: `1px solid ${border}`, padding: '4px 8px', borderRadius: '6px' }}>
       {active === null
@@ -97,23 +97,23 @@ function ModelBadge({ label, active }: { label: string; active: boolean | null }
 }
 
 const wrapStyle: React.CSSProperties = {
-  padding: '32px 36px', background: '#000', height: '100%',
+  padding: '32px 36px', background: '#060d1a', height: '100%',
   overflowY: 'auto', fontFamily: 'Inter, sans-serif', color: '#fff'
 }
 const sectionLabelStyle: React.CSSProperties = {
-  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#222',
+  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1e3050',
   letterSpacing: '2px', textTransform: 'uppercase', padding: '0 4px', marginBottom: '4px'
 }
 const rowStyle: React.CSSProperties = {
-  background: '#080808', border: '1px solid #111', borderRadius: '12px',
+  background: '#091220', border: '1px solid #111e35', borderRadius: '12px',
   padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px'
 }
 const iconWrapStyle: React.CSSProperties = {
-  width: '34px', height: '34px', background: '#111', borderRadius: '9px',
+  width: '34px', height: '34px', background: '#111e35', borderRadius: '9px',
   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
 }
 const selectStyle: React.CSSProperties = {
-  background: '#111', border: '1px solid #1a1a1a', color: '#fff',
+  background: '#111e35', border: '1px solid #1a1a1a', color: '#fff',
   padding: '7px 10px', borderRadius: '8px', fontSize: '11px',
   fontFamily: 'Inter, sans-serif', cursor: 'pointer', outline: 'none'
 }

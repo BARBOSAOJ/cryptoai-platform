@@ -41,7 +41,7 @@ export default function MemeRadar({ onSelect, marketData }: any) {
 
       <div style={topBarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Activity size={16} strokeWidth={1.75} style={{ animation: scanning ? 'pulse 1.2s infinite' : 'none', color: scanning ? '#fff' : '#333' }} />
+          <Activity size={16} strokeWidth={1.75} style={{ animation: scanning ? 'pulse 1.2s infinite' : 'none', color: scanning ? '#fff' : '#2c4268' }} />
           <span style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '-0.3px' }}>MemeRadar</span>
         </div>
         <span style={statusStyle(error, scanning)}>
@@ -51,8 +51,8 @@ export default function MemeRadar({ onSelect, marketData }: any) {
 
       {error ? (
         <div style={errorStyle}>
-          <AlertTriangle size={28} color="#333" strokeWidth={1.5} style={{ marginBottom: '12px' }} />
-          <p style={{ fontSize: '13px', color: '#333', margin: 0 }}>Motor IA desconectado. Reinicia ai-engine.</p>
+          <AlertTriangle size={28} color="#2c4268" strokeWidth={1.5} style={{ marginBottom: '12px' }} />
+          <p style={{ fontSize: '13px', color: '#2c4268', margin: 0 }}>Motor IA desconectado. Reinicia ai-engine.</p>
         </div>
       ) : (
         <div style={gridStyle}>
@@ -66,7 +66,7 @@ export default function MemeRadar({ onSelect, marketData }: any) {
                     <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', marginBottom: '2px' }}>
                       {meme.symbol.replace('USDT', '')}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#333', fontFamily: 'JetBrains Mono, monospace' }}>/ USDT</div>
+                    <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>/ USDT</div>
                   </div>
                   <span style={signalBadgeStyle(isBuy)}>{isBuy ? 'Comprar' : 'Vender'}</span>
                 </div>
@@ -78,12 +78,12 @@ export default function MemeRadar({ onSelect, marketData }: any) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {isBuy ? <TrendingUp size={12} color="#00d060" /> : <TrendingDown size={12} color="#ff3b3b" />}
-                    <span style={{ fontSize: '10px', color: '#333', fontFamily: 'JetBrains Mono, monospace' }}>{meme.sentiment}</span>
+                    <span style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>{meme.sentiment}</span>
                   </div>
                   <div style={confBarStyle}>
                     <div style={{ height: '100%', width: `${meme.confidence}%`, background: isBuy ? '#00d060' : '#ff3b3b', borderRadius: '1px', transition: 'width 0.5s' }} />
                   </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#333' }}>{meme.confidence}%</span>
+                  <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#2c4268' }}>{meme.confidence}%</span>
                 </div>
               </div>
             )
@@ -96,7 +96,7 @@ export default function MemeRadar({ onSelect, marketData }: any) {
 
 const wrapStyle: React.CSSProperties = {
   height: '100%', display: 'flex', flexDirection: 'column',
-  background: '#000', padding: '24px', fontFamily: 'Inter, sans-serif', color: '#fff'
+  background: '#060d1a', padding: '24px', fontFamily: 'Inter, sans-serif', color: '#fff'
 }
 const topBarStyle: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'
@@ -104,8 +104,8 @@ const topBarStyle: React.CSSProperties = {
 const statusStyle = (error: boolean, scanning: boolean): React.CSSProperties => ({
   fontSize: '10px', fontFamily: 'JetBrains Mono, monospace',
   color: error ? '#ff3b3b' : scanning ? '#fff' : '#00d060',
-  background: error ? 'rgba(255,59,59,0.08)' : scanning ? '#111' : 'rgba(0,208,96,0.08)',
-  border: `1px solid ${error ? 'rgba(255,59,59,0.2)' : scanning ? '#1a1a1a' : 'rgba(0,208,96,0.2)'}`,
+  background: error ? 'rgba(255,59,59,0.08)' : scanning ? '#111e35' : 'rgba(0,208,96,0.08)',
+  border: `1px solid ${error ? 'rgba(255,59,59,0.2)' : scanning ? '#1a2840' : 'rgba(0,208,96,0.2)'}`,
   padding: '4px 10px', borderRadius: '6px', letterSpacing: '0.5px'
 })
 const errorStyle: React.CSSProperties = {
@@ -115,8 +115,8 @@ const gridStyle: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px', overflowY: 'auto'
 }
 const cardStyle = (highlight: boolean): React.CSSProperties => ({
-  background: '#080808',
-  border: `1px solid ${highlight ? 'rgba(0,208,96,0.2)' : '#111'}`,
+  background: '#091220',
+  border: `1px solid ${highlight ? 'rgba(0,208,96,0.2)' : '#111e35'}`,
   borderRadius: '14px', padding: '16px', cursor: 'pointer', transition: 'border-color 0.2s'
 })
 const signalBadgeStyle = (isBuy: boolean): React.CSSProperties => ({
@@ -127,5 +127,5 @@ const signalBadgeStyle = (isBuy: boolean): React.CSSProperties => ({
   padding: '3px 9px', borderRadius: '5px', letterSpacing: '0.5px'
 })
 const confBarStyle: React.CSSProperties = {
-  flex: 1, height: '2px', background: '#111', borderRadius: '1px', margin: '0 8px', overflow: 'hidden'
+  flex: 1, height: '2px', background: '#111e35', borderRadius: '1px', margin: '0 8px', overflow: 'hidden'
 }

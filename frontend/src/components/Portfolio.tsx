@@ -66,9 +66,9 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
         <p style={sectionLabel}>Resumen</p>
         <button onClick={fetchStats} disabled={loading} style={refreshBtnStyle} title="Actualizar">
-          <RefreshCw size={12} color={loading ? '#1a1a1a' : '#333'} strokeWidth={1.75} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          <RefreshCw size={12} color={loading ? '#1a2840' : '#2c4268'} strokeWidth={1.75} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
           {lastUpdate && (
-            <span style={{ fontSize: '9px', color: '#222', fontFamily: 'JetBrains Mono, monospace', marginLeft: '6px' }}>
+            <span style={{ fontSize: '9px', color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', marginLeft: '6px' }}>
               {lastUpdate.toLocaleTimeString()}
             </span>
           )}
@@ -87,7 +87,7 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
           <div style={statLabelStyle}>Patrimonio total</div>
           <div style={statValueStyle}>${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
           {totalValue > 0 && (
-            <div style={{ fontSize: '11px', color: '#555', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+            <div style={{ fontSize: '11px', color: '#486080', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
               +${totalValue.toFixed(2)} en posiciones
             </div>
           )}
@@ -96,13 +96,13 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
         <div style={statCardStyle}>
           <div style={statLabelStyle}>P&L total</div>
           {loading ? (
-            <div style={{ ...statValueStyle, color: '#222' }}>—</div>
+            <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
           ) : (
             <div style={{ ...statValueStyle, color: stats && stats.totalPnl >= 0 ? '#00d060' : '#ff3b3b' }}>
               {stats ? `${stats.totalPnl >= 0 ? '+' : ''}$${stats.totalPnl.toFixed(2)}` : '—'}
             </div>
           )}
-          <div style={{ fontSize: '11px', color: '#333', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+          <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
             {stats ? `${stats.totalTrades} operaciones` : 'Cargando...'}
           </div>
         </div>
@@ -110,11 +110,11 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
         <div style={statCardStyle}>
           <div style={statLabelStyle}>Win rate</div>
           {loading ? (
-            <div style={{ ...statValueStyle, color: '#222' }}>—</div>
+            <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
           ) : (
             <div style={statValueStyle}>{stats ? `${stats.winRate}%` : '—'}</div>
           )}
-          <div style={{ fontSize: '11px', color: '#333', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+          <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
             {stats ? `${stats.wins} / ${stats.wins + stats.losses} ganadoras` : 'Sin trades aún'}
           </div>
         </div>
@@ -139,10 +139,10 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
                 <div style={coinDotStyle}>{pos.coin.slice(0, 1)}</div>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>{pos.coin}</div>
-                  <div style={{ fontSize: '10px', color: '#333', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>
+                  <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>
                     {pos.quantity.toLocaleString(undefined, { maximumSignificantDigits: 6 })} {pos.coin}
                   </div>
-                  <div style={{ fontSize: '9px', color: '#1f1f1f', fontFamily: 'JetBrains Mono, monospace', marginTop: '1px' }}>
+                  <div style={{ fontSize: '9px', color: '#1c2c44', fontFamily: 'JetBrains Mono, monospace', marginTop: '1px' }}>
                     Entrada: ${pos.avgBuyPrice.toLocaleString()}
                   </div>
                 </div>
@@ -169,40 +169,40 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
 }
 
 const wrapStyle: React.CSSProperties = {
-  padding: '32px 36px', background: '#000', height: '100%',
+  padding: '32px 36px', background: '#060d1a', height: '100%',
   overflowY: 'auto', fontFamily: 'Inter, sans-serif', color: '#fff'
 }
 const sectionLabel: React.CSSProperties = {
-  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#222',
+  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1e3050',
   letterSpacing: '2px', textTransform: 'uppercase', margin: 0
 }
 const statsGridStyle: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px'
 }
 const statCardStyle: React.CSSProperties = {
-  background: '#080808', border: '1px solid #111', borderRadius: '14px', padding: '18px 20px'
+  background: '#091220', border: '1px solid #111e35', borderRadius: '14px', padding: '18px 20px'
 }
 const statLabelStyle: React.CSSProperties = {
-  fontSize: '10px', color: '#333', textTransform: 'uppercase',
+  fontSize: '10px', color: '#2c4268', textTransform: 'uppercase',
   letterSpacing: '0.5px', marginBottom: '10px', fontWeight: 500
 }
 const statValueStyle: React.CSSProperties = {
   fontSize: '24px', fontWeight: 700, letterSpacing: '-1px'
 }
 const tableStyle: React.CSSProperties = {
-  background: '#080808', border: '1px solid #111', borderRadius: '14px', overflow: 'hidden'
+  background: '#091220', border: '1px solid #111e35', borderRadius: '14px', overflow: 'hidden'
 }
 const tableRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px'
 }
 const coinDotStyle: React.CSSProperties = {
-  width: '34px', height: '34px', borderRadius: '50%', background: '#111',
+  width: '34px', height: '34px', borderRadius: '50%', background: '#111e35',
   border: '1px solid #1a1a1a', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: '#555'
+  justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: '#486080'
 }
 const emptyStyle: React.CSSProperties = {
-  background: '#080808', border: '1px solid #111', borderRadius: '14px',
-  padding: '28px 24px', fontSize: '11px', color: '#333',
+  background: '#091220', border: '1px solid #111e35', borderRadius: '14px',
+  padding: '28px 24px', fontSize: '11px', color: '#2c4268',
   fontFamily: 'JetBrains Mono, monospace', textAlign: 'center', lineHeight: 1.6
 }
 const errorBoxStyle: React.CSSProperties = {
@@ -210,6 +210,6 @@ const errorBoxStyle: React.CSSProperties = {
   borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center'
 }
 const refreshBtnStyle: React.CSSProperties = {
-  background: '#0a0a0a', border: '1px solid #111', borderRadius: '8px',
+  background: '#0b1424', border: '1px solid #111e35', borderRadius: '8px',
   padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center'
 }

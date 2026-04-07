@@ -23,7 +23,7 @@ export default function LoadingSplash() {
         </div>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.3px', marginBottom: '8px' }}>CryptoAI</div>
-          <div style={{ fontSize: '11px', color: '#333', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px', animation: 'fade 1.2s infinite' }}>
+          <div style={{ fontSize: '11px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px', animation: 'fade 1.2s infinite' }}>
             {STEPS[step]}
           </div>
         </div>
@@ -34,7 +34,7 @@ export default function LoadingSplash() {
 }
 
 const wrapStyle: React.CSSProperties = {
-  height: '100vh', width: '100vw', background: '#000',
+  height: '100vh', width: '100vw', background: '#060d1a',
   display: 'flex', justifyContent: 'center', alignItems: 'center',
   fontFamily: 'Inter, sans-serif', color: '#fff'
 }
@@ -44,6 +44,6 @@ const logoWrapStyle: React.CSSProperties = {
 }
 const spinnerStyle: React.CSSProperties = {
   width: '20px', height: '20px', borderRadius: '50%',
-  border: '2px solid #111', borderTopColor: '#fff',
+  border: '2px solid #111e35', borderTopColor: '#fff',
   animation: 'spin 0.8s linear infinite'
 }

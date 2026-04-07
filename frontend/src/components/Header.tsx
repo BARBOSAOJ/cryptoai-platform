@@ -58,7 +58,7 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div ref={menuRef} style={{ position: 'relative' }}>
           <div style={searchWrapStyle}>
-            <Search size={13} color="#2a2a2a" strokeWidth={2} />
+            <Search size={13} color="#243858" strokeWidth={2} />
             <input
               type="text"
               placeholder="Buscar mercados..."
@@ -78,7 +78,7 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
                       size={12}
                       onClick={e => toggleFavorite(e, sym)}
                       fill={favorites.includes(sym) ? '#fff' : 'none'}
-                      color={favorites.includes(sym) ? '#fff' : '#333'}
+                      color={favorites.includes(sym) ? '#fff' : '#2c4268'}
                       style={{ cursor: 'pointer', flexShrink: 0 }}
                     />
                     <span style={{ fontSize: '12px', fontWeight: 500, fontFamily: 'JetBrains Mono, monospace' }}>{sym}</span>
@@ -93,7 +93,7 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '1px', height: '16px', background: '#111' }} />
+          <div style={{ width: '1px', height: '16px', background: '#111e35' }} />
           <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', letterSpacing: '-0.3px' }}>
             {currentSymbol.replace('USDT', '')} / USDT
           </span>
@@ -115,7 +115,7 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
         <div title={sseConnected ? 'Tiempo real activo' : 'Fallback a polling'} style={{ display: 'flex', alignItems: 'center' }}>
           {sseConnected
             ? <Wifi size={13} color="#00d060" strokeWidth={1.75} />
-            : <WifiOff size={13} color="#555" strokeWidth={1.75} />}
+            : <WifiOff size={13} color="#486080" strokeWidth={1.75} />}
         </div>
         {/* Aviso si los modelos IA no están disponibles */}
         {aiHealth && !aiHealth.lstm && !aiHealth.finbert && (
@@ -131,13 +131,13 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
 }
 
 const headerStyle: React.CSSProperties = {
-  height: '56px', background: '#060606', borderBottom: '1px solid #111',
+  height: '56px', background: '#07101e', borderBottom: '1px solid #111e35',
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   padding: '0 18px', position: 'relative', zIndex: 100
 }
 const searchWrapStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '8px',
-  background: '#0d0d0d', border: '1px solid #1a1a1a',
+  background: '#0d1730', border: '1px solid #1a1a1a',
   borderRadius: '9px', padding: '0 12px', height: '34px', width: '200px'
 }
 const inputStyle: React.CSSProperties = {
@@ -146,25 +146,25 @@ const inputStyle: React.CSSProperties = {
 }
 const dropdownStyle: React.CSSProperties = {
   position: 'absolute', top: '40px', left: 0, width: '280px',
-  background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: '10px',
-  boxShadow: '0 12px 30px rgba(0,0,0,0.6)', overflow: 'hidden', padding: '6px'
+  background: '#0d1730', border: '1px solid #1a1a1a', borderRadius: '10px',
+  boxShadow: '0 12px 30px rgba(4,10,24,0.85)', overflow: 'hidden', padding: '6px'
 }
 const dropLabelStyle: React.CSSProperties = {
   padding: '6px 10px', fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
-  color: '#2a2a2a', letterSpacing: '1.5px', textTransform: 'uppercase'
+  color: '#243858', letterSpacing: '1.5px', textTransform: 'uppercase'
 }
 const optionStyle: React.CSSProperties = {
   padding: '9px 10px', display: 'flex', alignItems: 'center',
   justifyContent: 'space-between', cursor: 'pointer', borderRadius: '7px',
-  color: '#e2e2f0', transition: 'background 0.15s'
+  color: '#ccdaf0', transition: 'background 0.15s'
 }
 const planTagStyle: React.CSSProperties = {
   fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1.5px',
-  color: '#fff', background: '#141414', border: '1px solid #1e1e1e',
+  color: '#fff', background: '#14203c', border: '1px solid #1e1e1e',
   padding: '5px 10px', borderRadius: '7px', textTransform: 'uppercase'
 }
 const avatarStyle: React.CSSProperties = {
-  width: '30px', height: '30px', borderRadius: '50%', background: '#141414',
+  width: '30px', height: '30px', borderRadius: '50%', background: '#14203c',
   border: '1px solid #1e1e1e', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', fontSize: '10px', fontWeight: 600, color: '#555'
+  justifyContent: 'center', fontSize: '10px', fontWeight: 600, color: '#486080'
 }

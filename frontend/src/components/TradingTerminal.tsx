@@ -21,7 +21,7 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
 
   const isBuy      = insight?.signal?.includes('COMPRAR') || insight?.signal?.includes('BUY')
   const confidence = parseInt(insight?.confidence || '50')
-  const lstmActive = insight?.lstm_active ?? true
+  const lstmActive = insight?.lstm_active ?? false
   const toggle = (k: keyof typeof expanded) => setExpanded(p => ({ ...p, [k]: !p[k] }))
 
   const syncRisk = async (params: typeof riskParams) => {
@@ -103,10 +103,10 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', background: '#000', width: '100%' }}>
+    <div style={{ display: 'flex', height: '100%', background: '#060d1a', width: '100%' }}>
 
       {/* CHART */}
-      <div style={{ flex: 1, borderRight: '1px solid #111', overflow: 'hidden' }}>
+      <div style={{ flex: 1, borderRight: '1px solid #111e35', overflow: 'hidden' }}>
         <ChartPanel symbol={symbol} insight={insight} />
       </div>
 
@@ -117,7 +117,7 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
         <div style={sectionStyle}>
           <div onClick={() => toggle('console')} style={sectionHeaderStyle}>
             <span style={sectionTitleStyle}>Análisis IA</span>
-            {expanded.console ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
+            {expanded.console ? <ChevronUp size={13} color="#1e3050" /> : <ChevronDown size={13} color="#1e3050" />}
           </div>
           {expanded.console && (
             <div style={{ padding: '0 16px 16px' }}>
@@ -131,7 +131,7 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
               )}
               <div style={aiCardStyle(isBuy)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#333', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#2c4268', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                     Señal combinada
                   </span>
                   <span style={badgeStyle(isBuy)}>{isBuy ? 'Comprar' : 'Monitorizar'}</span>
@@ -139,10 +139,10 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
                 <div style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.5px', marginBottom: '3px' }}>
                   {insight?.signal || 'Escaneando'}
                 </div>
-                <div style={{ fontSize: '10px', color: '#333', fontFamily: 'JetBrains Mono, monospace', marginBottom: '12px' }}>
+                <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginBottom: '12px' }}>
                   {lstmActive ? 'LSTM + FinBERT' : 'FinBERT'} · {confidence}% confianza
                 </div>
-                <div style={{ height: '2px', background: '#111', borderRadius: '1px', overflow: 'hidden' }}>
+                <div style={{ height: '2px', background: '#111e35', borderRadius: '1px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${confidence}%`, background: isBuy ? '#00d060' : '#fff', borderRadius: '1px', transition: '1s' }} />
                 </div>
               </div>
@@ -154,15 +154,15 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
         <div style={sectionStyle}>
           <div onClick={() => toggle('log')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={13} color="#222" strokeWidth={1.75} />
+              <Clock size={13} color="#1e3050" strokeWidth={1.75} />
               <span style={sectionTitleStyle}>Historial</span>
             </div>
-            {expanded.log ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
+            {expanded.log ? <ChevronUp size={13} color="#1e3050" /> : <ChevronDown size={13} color="#1e3050" />}
           </div>
           {expanded.log && (
             <div style={{ padding: '0 16px 16px', maxHeight: '180px', overflowY: 'auto' }}>
               {history.length === 0 ? (
-                <div style={{ fontSize: '11px', color: '#222', textAlign: 'center', padding: '12px 0', fontFamily: 'JetBrains Mono, monospace' }}>
+                <div style={{ fontSize: '11px', color: '#1e3050', textAlign: 'center', padding: '12px 0', fontFamily: 'JetBrains Mono, monospace' }}>
                   Sin señales aún
                 </div>
               ) : history.map((h: any) => (
@@ -170,7 +170,7 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
                   <div style={{ fontSize: '11px', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>
                     {h.symbol} <span style={{ color: '#00d060' }}>· {h.signal}</span>
                   </div>
-                  <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
+                  <div style={{ fontSize: '10px', color: '#2c4268', marginTop: '2px' }}>
                     ${parseFloat(h.price).toLocaleString()} · {h.confidence}
                   </div>
                 </div>
@@ -183,10 +183,10 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
         <div style={sectionStyle}>
           <div onClick={() => toggle('risk')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Target size={13} color="#222" strokeWidth={1.75} />
+              <Target size={13} color="#1e3050" strokeWidth={1.75} />
               <span style={sectionTitleStyle}>Gestión de riesgo</span>
             </div>
-            {expanded.risk ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
+            {expanded.risk ? <ChevronUp size={13} color="#1e3050" /> : <ChevronDown size={13} color="#1e3050" />}
           </div>
           {expanded.risk && (
             <div style={{ padding: '0 16px 16px' }}>
@@ -203,11 +203,11 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
                 />
               </div>
               <div style={riskResultStyle}>
-                <div style={{ fontSize: '9px', color: '#333', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
                   Tamaño recomendado
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px' }}>
-                  {calcResult.size.toFixed(4)}<span style={{ fontSize: '11px', color: '#333', fontWeight: 400, marginLeft: '4px' }}>{symbol.replace('USDT', '')}</span>
+                  {calcResult.size.toFixed(4)}<span style={{ fontSize: '11px', color: '#2c4268', fontWeight: 400, marginLeft: '4px' }}>{symbol.replace('USDT', '')}</span>
                 </div>
               </div>
             </div>
@@ -218,16 +218,16 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
         <div style={sectionStyle}>
           <div onClick={() => toggle('auto')} style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Play size={13} color="#222" strokeWidth={1.75} />
+              <Play size={13} color="#1e3050" strokeWidth={1.75} />
               <span style={sectionTitleStyle}>Auto-trade</span>
             </div>
-            {expanded.auto ? <ChevronUp size={13} color="#222" /> : <ChevronDown size={13} color="#222" />}
+            {expanded.auto ? <ChevronUp size={13} color="#1e3050" /> : <ChevronDown size={13} color="#1e3050" />}
           </div>
           {expanded.auto && (
             <div style={{ padding: '0 16px 16px' }}>
-              <div style={{ ...riskResultStyle, borderColor: isBuy ? 'rgba(0,208,96,0.2)' : '#111' }}>
+              <div style={{ ...riskResultStyle, borderColor: isBuy ? 'rgba(0,208,96,0.2)' : '#111e35' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '10px', color: '#333' }}>Estrategia IA</span>
+                  <span style={{ fontSize: '10px', color: '#2c4268' }}>Estrategia IA</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00d060' }} />
                     <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#00d060' }}>Activa</span>
@@ -235,12 +235,12 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '9px', color: '#222', fontFamily: 'JetBrains Mono, monospace', marginBottom: '4px' }}>Proyección</div>
+                    <div style={{ fontSize: '9px', color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', marginBottom: '4px' }}>Proyección</div>
                     <div style={{ fontSize: '16px', fontWeight: 700, color: '#00d060', letterSpacing: '-0.5px' }}>
                       +${(user.balance * (confidence / 1000)).toFixed(2)}
                     </div>
                   </div>
-                  <BarChart3 size={20} color="#111" />
+                  <BarChart3 size={20} color="#111e35" />
                 </div>
 
                 {/* Feedback de ejecución */}
@@ -291,14 +291,14 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
             {!insight?.news_details?.length ? (
-              <div style={{ fontSize: '10px', color: '#222', fontFamily: 'JetBrains Mono, monospace', padding: '12px 0', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', padding: '12px 0', textAlign: 'center' }}>
                 Sin noticias disponibles
               </div>
             ) : insight.news_details.map((item: any, i: number) => (
               <div key={i} style={newsItemStyle}>
-                <div style={{ fontSize: '11px', color: '#888', lineHeight: 1.5, marginBottom: '6px' }}>{item.title}</div>
+                <div style={{ fontSize: '11px', color: '#7890b0', lineHeight: 1.5, marginBottom: '6px' }}>{item.title}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#222' }}>{item.source}</span>
+                  <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1e3050' }}>{item.source}</span>
                   <span style={newsBadgeStyle(item.label)}>{item.label}</span>
                 </div>
               </div>
@@ -308,7 +308,7 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
 
         <div style={{ padding: '12px 16px', borderTop: '1px solid #0e0e0e', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <ShieldCheck size={12} color="#00d060" strokeWidth={1.75} />
-          <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1a1a1a', letterSpacing: '1px' }}>RSA-2048 ACTIVO</span>
+          <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1a2840', letterSpacing: '1px' }}>RSA-2048 ACTIVO</span>
         </div>
       </aside>
     </div>
@@ -316,8 +316,8 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
 }
 
 const asideStyle: React.CSSProperties = {
-  width: '300px', background: '#060606', display: 'flex', flexDirection: 'column',
-  borderLeft: '1px solid #111', overflowY: 'auto'
+  width: '300px', background: '#07101e', display: 'flex', flexDirection: 'column',
+  borderLeft: '1px solid #111e35', overflowY: 'auto'
 }
 const sectionStyle: React.CSSProperties = { borderBottom: '1px solid #0e0e0e' }
 const sectionHeaderStyle: React.CSSProperties = {
@@ -325,17 +325,17 @@ const sectionHeaderStyle: React.CSSProperties = {
   alignItems: 'center', cursor: 'pointer'
 }
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: '11px', fontWeight: 600, color: '#333', letterSpacing: '0.3px'
+  fontSize: '11px', fontWeight: 600, color: '#2c4268', letterSpacing: '0.3px'
 }
 const aiCardStyle = (isBuy: boolean): React.CSSProperties => ({
-  background: '#0a0a0a', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.15)' : '#111'}`,
+  background: '#0b1424', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.15)' : '#111e35'}`,
   borderRadius: '12px', padding: '14px'
 })
 const badgeStyle = (isBuy: boolean): React.CSSProperties => ({
   fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
-  color: isBuy ? '#00d060' : '#333',
-  background: isBuy ? 'rgba(0,208,96,0.08)' : '#111',
-  border: `1px solid ${isBuy ? 'rgba(0,208,96,0.18)' : '#1a1a1a'}`,
+  color: isBuy ? '#00d060' : '#2c4268',
+  background: isBuy ? 'rgba(0,208,96,0.08)' : '#111e35',
+  border: `1px solid ${isBuy ? 'rgba(0,208,96,0.18)' : '#1a2840'}`,
   padding: '3px 8px', borderRadius: '5px', letterSpacing: '0.5px'
 })
 const warningBannerStyle: React.CSSProperties = {
@@ -344,26 +344,26 @@ const warningBannerStyle: React.CSSProperties = {
   padding: '6px 10px', marginBottom: '8px'
 }
 const logItemStyle: React.CSSProperties = {
-  borderLeft: '2px solid #111', paddingLeft: '10px', marginBottom: '12px'
+  borderLeft: '2px solid #111e35', paddingLeft: '10px', marginBottom: '12px'
 }
 const riskInputStyle: React.CSSProperties = {
-  background: '#0a0a0a', border: '1px solid #1a1a1a', color: '#fff',
+  background: '#0b1424', border: '1px solid #1a1a1a', color: '#fff',
   padding: '9px 10px', borderRadius: '8px', fontSize: '11px',
   fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%'
 }
 const riskResultStyle: React.CSSProperties = {
-  background: '#0a0a0a', border: '1px solid #111', borderRadius: '10px', padding: '12px'
+  background: '#0b1424', border: '1px solid #111e35', borderRadius: '10px', padding: '12px'
 }
 const execBtnStyle = (active: boolean): React.CSSProperties => ({
   width: '100%', padding: '10px', borderRadius: '8px', border: 'none',
-  background: active ? '#00d060' : '#0a0a0a',
-  color: active ? '#000' : '#222',
+  background: active ? '#00d060' : '#0b1424',
+  color: active ? '#000' : '#1e3050',
   fontSize: '11px', fontWeight: 600, cursor: active ? 'pointer' : 'not-allowed',
   fontFamily: 'Inter, sans-serif', transition: 'all 0.2s', letterSpacing: '0.3px'
 })
 const cancelBtnStyle: React.CSSProperties = {
   flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #1a1a1a',
-  background: '#0a0a0a', color: '#555', fontSize: '11px', fontWeight: 600,
+  background: '#0b1424', color: '#486080', fontSize: '11px', fontWeight: 600,
   cursor: 'pointer', fontFamily: 'Inter, sans-serif'
 }
 const confirmBtnStyle: React.CSSProperties = {
@@ -380,8 +380,8 @@ const newsBadgeStyle = (label: string): React.CSSProperties => {
   return {
     fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px',
     padding: '2px 7px', borderRadius: '4px',
-    color: bull ? '#00d060' : bear ? '#ff3b3b' : '#333',
-    background: bull ? 'rgba(0,208,96,0.07)' : bear ? 'rgba(255,59,59,0.07)' : '#0a0a0a',
-    border: `1px solid ${bull ? 'rgba(0,208,96,0.15)' : bear ? 'rgba(255,59,59,0.15)' : '#111'}`
+    color: bull ? '#00d060' : bear ? '#ff3b3b' : '#2c4268',
+    background: bull ? 'rgba(0,208,96,0.07)' : bear ? 'rgba(255,59,59,0.07)' : '#0b1424',
+    border: `1px solid ${bull ? 'rgba(0,208,96,0.15)' : bear ? 'rgba(255,59,59,0.15)' : '#111e35'}`
   }
 }
