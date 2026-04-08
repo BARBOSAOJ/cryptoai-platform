@@ -13,10 +13,15 @@ import java.util.Base64;
 @ApplicationScoped
 public class AesEncryptionService {
 
-    @ConfigProperty(name = "app.encryption.master-key", defaultValue = "crypto-ai-dev-key-32bytes-padding")
+    @ConfigProperty(name = "app.encryption.master-key")
     String masterKey;
 
     private SecretKeySpec getKey() {
+        if (masterKey == null || masterKey.isBlank()) {
+            throw new IllegalStateException(
+                "app.encryption.master-key no configurada. " +
+                "Establece la variable de entorno APP_ENCRYPTION_MASTER_KEY con una clave de 32 bytes.");
+        }
         byte[] keyBytes = masterKey.getBytes(StandardCharsets.UTF_8);
         byte[] key = new byte[32];
         System.arraycopy(keyBytes, 0, key, 0, Math.min(keyBytes.length, 32));
