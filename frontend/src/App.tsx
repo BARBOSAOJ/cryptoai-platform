@@ -61,19 +61,24 @@ export default function App() {
   }, [isLoggedIn, loading])
 
   // ─── Lógica AI ─────────────────────────────────────────────────────────────
-  const fetchAiInsight = useCallback(async (symbol: string, price: number) => {
+  const fetchAiInsight = useCallback(async (
+    symbol: string,
+    price: number,
+    history?: number[],
+    volumes?: number[]
+  ) => {
     const now = Date.now()
     const lastCall = aiCooldownRef.current[symbol] || 0
     if (now - lastCall < 8000) return
 
     aiCooldownRef.current[symbol] = now
 
-    const history = historyRef.current[symbol] || []
-    const volumes = volumesRef.current[symbol] || []
-    if (history.length < 5) return
+    const h = history ?? historyRef.current[symbol] ?? []
+    const v = volumes ?? volumesRef.current[symbol] ?? []
+    if (h.length < 5) return
 
     try {
-      const res = await aiClient.post('/analyze', { symbol, price, history, volumes })
+      const res = await aiClient.post('/analyze', { symbol, price, history: h, volumes: v })
       const insight = res.data
 
       setAiInsights(prev => ({ ...prev, [symbol]: insight }))
@@ -106,37 +111,51 @@ export default function App() {
     let destroyed = false
 
     const processTickBatch = (rawData: Record<string, { price: string; volume: string }>) => {
+      // Capturar datos calculados ANTES del updater para evitar race conditions
+      const watchedSymbols = new Set([currentSymRef.current, ...MAIN_COINS])
+      const aiQueue: Array<{ symbol: string; price: number; history: number[]; volumes: number[] }> = []
+
+      for (const [symbol, tick] of Object.entries(rawData)) {
+        if (!tick?.price) continue
+        const price = parseFloat(tick.price)
+        if (isNaN(price) || price <= 0) continue
+
+        const prevHistory = historyRef.current[symbol] || []
+        const prevVolumes = volumesRef.current[symbol] || []
+        const newHistory  = [...prevHistory, price].slice(-65)
+        const newVolumes  = [...prevVolumes, parseFloat(tick.volume || '0')].slice(-65)
+
+        // Actualizar refs con los datos de este tick — snapshot estable para la IA
+        historyRef.current[symbol] = newHistory
+        volumesRef.current[symbol] = newVolumes
+
+        if (watchedSymbols.has(symbol)) {
+          aiQueue.push({ symbol, price, history: newHistory, volumes: newVolumes })
+        }
+      }
+
       setMarketData(prev => {
         const updated = { ...prev }
-        const watchedSymbols = new Set([currentSymRef.current, ...MAIN_COINS])
-
         for (const [symbol, tick] of Object.entries(rawData)) {
           if (!tick?.price) continue
           const price = parseFloat(tick.price)
           if (isNaN(price) || price <= 0) continue
 
-          const prevHistory = historyRef.current[symbol] || []
-          const prevVolumes = volumesRef.current[symbol] || []
-          const prevPrice   = prevHistory[prevHistory.length - 1] ?? price
-          const volume      = parseFloat(tick.volume || '0')
-
-          const newHistory = [...prevHistory, price].slice(-65)
-          const newVolumes = [...prevVolumes, volume].slice(-65)
-          historyRef.current[symbol] = newHistory
-          volumesRef.current[symbol] = newVolumes
-
-          const changePct = prevPrice > 0
+          const newHistory = historyRef.current[symbol] || []
+          const newVolumes = volumesRef.current[symbol] || []
+          const prevPrice  = prev[symbol]?.history?.at(-2) ?? price
+          const changePct  = prevPrice > 0
             ? (((price - prevPrice) / prevPrice) * 100).toFixed(2) : '0.00'
-          const changeStr = parseFloat(changePct) >= 0 ? `+${changePct}%` : `${changePct}%`
-
-          updated[symbol] = { price, history: newHistory, volumes: newVolumes, change: changeStr }
-
-          if (watchedSymbols.has(symbol)) {
-            fetchAiInsight(symbol, price)
-          }
+          const changeStr  = parseFloat(changePct) >= 0 ? `+${changePct}%` : `${changePct}%`
+          updated[symbol]  = { price, history: newHistory, volumes: newVolumes, change: changeStr }
         }
         return updated
       })
+
+      // Llamar a la IA con los datos capturados en este tick (fuera del updater)
+      for (const { symbol, price, history, volumes } of aiQueue) {
+        fetchAiInsight(symbol, price, history, volumes)
+      }
     }
 
     const connectSse = () => {
