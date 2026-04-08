@@ -1096,6 +1096,25 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     # Aplicar calibración isotónica si existe en Redis para este símbolo
     conf = MotorBacktest.aplicar_calibracion(symbol, conf)
 
+    # ── Precios de entrada y objetivo para overlays en el gráfico ────────────
+    rsi_val_for_entry    = indicators.get("rsi", 50.0)
+    bb_pos_for_entry     = indicators.get("bb_position", 0.0)
+    stoch_rsi_for_entry  = indicators.get("stoch_rsi", 0.5)
+
+    oversold = rsi_val_for_entry < 35 or bb_pos_for_entry < -0.4 or stoch_rsi_for_entry < 0.25
+    if oversold:
+        entry_price = price
+    else:
+        recent_lows = history[-5:] if len(history) >= 5 else history
+        entry_price = round(min(recent_lows), 8)
+
+    if lstm_active and predicted_next > price:
+        target_price = predicted_next
+    else:
+        target_price = price * (1 + abs(tech_score) * 0.02 + 0.005)
+    target_price = round(max(target_price, price * 1.002), 8)
+    entry_price  = round(entry_price, 8)
+
     result = {
         "symbol":         symbol,
         "signal":         signal,
@@ -1108,6 +1127,8 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
         "indicators":     indicators,
         "multi_timeframe": mtf,
         "market_regime":  regimen_info if indicators else {"regimen": "RANGING"},
+        "entry_price":    entry_price,
+        "target_price":   target_price,
     }
 
     if redis_client:
