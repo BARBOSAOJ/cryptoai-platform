@@ -35,12 +35,14 @@ export default function App() {
   const [refreshInterval, setRefreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]   = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
+  const [dataError, setDataError]     = useState<string | null>(null)
   const [aiHealth, setAiHealth]       = useState<{ lstm: boolean; finbert: boolean } | null>(null)
   const [portfolioVersion, setPortfolioVersion] = useState(0)
 
-  const historyRef     = useRef<Record<string, number[]>>({})
-  const volumesRef     = useRef<Record<string, number[]>>({})
-  const currentSymRef  = useRef(currentSymbol)
+  const historyRef          = useRef<Record<string, number[]>>({})
+  const volumesRef          = useRef<Record<string, number[]>>({})
+  const currentSymRef       = useRef(currentSymbol)
+  const pollingErrorCount   = useRef(0)
   const aiCooldownRef  = useRef<Record<string, number>>({})
   const reconnectCount = useRef(0)
 
@@ -176,7 +178,13 @@ export default function App() {
       }
 
       es.onmessage = (event) => {
-        try { processTickBatch(JSON.parse(event.data)) } catch { /* ignorar errores de parse */ }
+        try {
+          processTickBatch(JSON.parse(event.data))
+          setDataError(null)
+          pollingErrorCount.current = 0
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('[SSE] Error procesando mensaje:', e)
+        }
       }
 
       es.onerror = () => {
@@ -191,7 +199,15 @@ export default function App() {
             try {
               const res = await apiClient.get('/prices')
               processTickBatch(res.data)
-            } catch { /* ignorar errores de polling */ }
+              pollingErrorCount.current = 0
+              setDataError(null)
+            } catch (e) {
+              pollingErrorCount.current += 1
+              if (import.meta.env.DEV) console.warn('[Polling] Error:', e)
+              if (pollingErrorCount.current >= 3) {
+                setDataError('Sin datos de mercado. Verifica la conexión con market-service.')
+              }
+            }
           }, refreshInterval)
         }
 
@@ -254,6 +270,16 @@ export default function App() {
           sseConnected={sseConnected}
           aiHealth={aiHealth}
         />
+        {dataError && (
+          <div style={{
+            background: 'rgba(255,59,59,0.08)', borderBottom: '1px solid rgba(255,59,59,0.2)',
+            padding: '6px 20px', fontSize: '11px', color: '#ff6b6b',
+            display: 'flex', alignItems: 'center', gap: '8px'
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ff3b3b', flexShrink: 0 }} />
+            {dataError}
+          </div>
+        )}
         <main style={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === 'TRADE' && (
             <ErrorBoundary fallback="Error en el terminal de trading">
