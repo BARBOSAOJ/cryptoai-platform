@@ -1,5 +1,6 @@
-import { Search, Star, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
+import { Search, Star, Wifi, WifiOff, AlertTriangle, Wallet } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
+import { apiClient } from '../api'
 
 interface HeaderProps {
   currentSymbol: string
@@ -8,16 +9,34 @@ interface HeaderProps {
   marketData: Record<string, any>
   sseConnected?: boolean
   aiHealth?: { lstm: boolean; finbert: boolean } | null
+  walletBalance?: number | null
 }
 
-export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth }: HeaderProps) {
-  const [searchInput, setSearchInput] = useState('')
-  const [isOpen, setIsOpen] = useState(false)
+export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth, walletBalance }: HeaderProps) {
+  const [searchInput, setSearchInput]     = useState('')
+  const [isOpen, setIsOpen]               = useState(false)
+  const [saldoCartera, setSaldoCartera]   = useState<number | null>(walletBalance ?? null)
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('fav_symbols')
     return saved ? JSON.parse(saved) : ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
   })
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Actualizar badge cuando el padre pasa walletBalance
+  useEffect(() => {
+    if (walletBalance !== undefined && walletBalance !== null) {
+      setSaldoCartera(walletBalance)
+    }
+  }, [walletBalance])
+
+  // Obtener saldo de cartera al montar
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    apiClient.get('/cartera')
+      .then(res => setSaldoCartera(res.data.saldoDisponible))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('fav_symbols', JSON.stringify(favorites))
@@ -129,6 +148,15 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
             <AlertTriangle size={13} color="#f59e0b" strokeWidth={1.75} />
           </div>
         )}
+        {/* Badge de saldo de cartera virtual */}
+        {saldoCartera !== null && (
+          <div style={walletBadgeStyle} title="Saldo disponible en cartera virtual">
+            <Wallet size={11} color="#486080" strokeWidth={1.75} />
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#c8d8ec' }}>
+              ${saldoCartera.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
         <span style={planTagStyle}>{user.plan}</span>
         <div style={avatarStyle}>{initials}</div>
       </div>
@@ -163,6 +191,11 @@ const optionStyle: React.CSSProperties = {
   padding: '9px 10px', display: 'flex', alignItems: 'center',
   justifyContent: 'space-between', cursor: 'pointer', borderRadius: '7px',
   color: '#ccdaf0', transition: 'background 0.15s'
+}
+const walletBadgeStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '5px',
+  background: '#0d1730', border: '1px solid #1a2840',
+  padding: '5px 10px', borderRadius: '7px'
 }
 const planTagStyle: React.CSSProperties = {
   fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1.5px',

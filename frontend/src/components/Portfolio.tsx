@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, RefreshCw, AlertCircle } from 'lucide-react'
 import { apiClient } from '../api'
+import WalletPanel from './WalletPanel'
 
 interface PortfolioStats {
   totalTrades: number
@@ -27,10 +28,11 @@ interface PortfolioProps {
 }
 
 export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) {
-  const [stats, setStats]     = useState<PortfolioStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
+  const [stats, setStats]           = useState<PortfolioStats | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState('')
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [saldoCartera, setSaldoCartera] = useState<number | null>(null)
 
   const fetchStats = async () => {
     const token = localStorage.getItem('token')
@@ -58,11 +60,14 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
   // Carga inicial y refresco cuando se ejecuta un trade
   useEffect(() => { fetchStats() }, [refreshTrigger])
 
-  const balance = user.balance || 12500.50
   const totalValue = stats?.positions?.reduce((acc, p) => acc + p.value, 0) ?? 0
+  const balance = saldoCartera !== null ? saldoCartera : (user.balance || 0)
 
   return (
     <div style={wrapStyle}>
+      {/* Cartera virtual — arriba del grid de stats */}
+      <WalletPanel onSaldoActualizado={setSaldoCartera} />
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
         <p style={sectionLabel}>Resumen</p>
         <button onClick={fetchStats} disabled={loading} style={refreshBtnStyle} title="Actualizar">
@@ -94,7 +99,7 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
 
       <div style={{ ...statsGridStyle, opacity: loading && stats ? 0.5 : 1, transition: 'opacity 0.2s' }}>
         <div style={statCardStyle}>
-          <div style={statLabelStyle}>Patrimonio total</div>
+          <div style={statLabelStyle}>Saldo disponible</div>
           <div style={statValueStyle}>${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
           {totalValue > 0 && (
             <div style={{ fontSize: '11px', color: '#486080', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
