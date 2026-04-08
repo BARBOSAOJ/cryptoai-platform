@@ -96,8 +96,14 @@ export default function App() {
 
       setAiInsights(prev => ({ ...prev, [symbol]: insight }))
 
+      // Filtro correlación BTC (issue #27): calcular variación % de BTC en última vela
+      const btcHistory = historyRef.current['BTCUSDT'] ?? []
+      const btcPriceChange = btcHistory.length >= 2
+        ? (btcHistory[btcHistory.length - 1] - btcHistory[btcHistory.length - 2]) / btcHistory[btcHistory.length - 2]
+        : 0
+
       // Llamar al agente autónomo para decidir si operar
-      procesarTick(symbol, price, insight)
+      procesarTick(symbol, price, insight, btcPriceChange)
 
       if (symbol === currentSymRef.current && insight?.signal?.includes('COMPRAR')) {
         setAlertFlash(true)

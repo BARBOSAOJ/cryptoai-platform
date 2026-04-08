@@ -38,7 +38,8 @@ export default function TradingTerminal({
     const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace('%', ''), 10)
     return isNaN(n) ? 50 : Math.max(0, Math.min(100, n))
   })()
-  const lstmActive = insight?.lstm_active ?? false
+  const lstmActive      = insight?.lstm_active ?? false
+  const convictionScore = typeof insight?.conviction_score === 'number' ? insight.conviction_score : null
 
   // ── P&L de posición actual ──────────────────────────────────────────────────
   const price = currentPrice > 0 ? currentPrice : (insight?.entry_price ?? 0)
@@ -146,6 +147,24 @@ export default function TradingTerminal({
                 {confidence}%
               </span>
             </div>
+            {convictionScore !== null && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={microLabel}>Convicción</span>
+                  <span style={{
+                    fontSize: '10px', fontFamily: 'JetBrains Mono, monospace',
+                    color: convictionScore >= 65 ? '#00d060' : convictionScore >= 45 ? '#f59e0b' : '#ff3b3b'
+                  }}>{convictionScore}/100</span>
+                </div>
+                <div style={{ height: '4px', background: '#0d1a2e', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: '2px', transition: '1s',
+                    width: `${convictionScore}%`,
+                    background: convictionScore >= 65 ? '#00d060' : convictionScore >= 45 ? '#f59e0b' : '#ff3b3b'
+                  }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

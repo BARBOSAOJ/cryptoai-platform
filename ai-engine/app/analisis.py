@@ -171,20 +171,47 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     target_price = round(max(target_price, price * 1.002), 8)
     entry_price  = round(entry_price, 8)
 
+    # ── Score de convicción unificado 0-100 ────────────────────────────────────
+    # Cada componente normalizado a -1..+1, luego mapeado a 0..100
+    lstm_component      = max(-1.0, min(1.0, tech_score / 5.0)) if lstm_active else 0.0
+    sentiment_component = max(-1.0, min(1.0, avg_sentiment * 2.0))
+    rsi_val_raw         = indicators.get("rsi", 50.0) if indicators else 50.0
+    rsi_component       = max(-1.0, min(1.0, (50.0 - rsi_val_raw) / 20.0)) if indicators else 0.0
+    macd_component      = max(-1.0, min(1.0, indicators.get("macd_histogram", 0.0) * 20.0)) if indicators else 0.0
+    _regime_map         = {"TRENDING": 0.4, "RANGING": 0.0, "VOLATILE": -0.4, "TRANSITION": -0.2}
+    regime_component    = _regime_map.get(regimen_actual, 0.0)
+
+    w_lstm    = 0.35 if lstm_active else 0.0
+    w_finbert = 0.20
+    w_rsi     = 0.15 if indicators else 0.0
+    w_macd    = 0.15 if indicators else 0.0
+    w_regime  = 0.15 if indicators else 0.0
+    w_total   = w_lstm + w_finbert + w_rsi + w_macd + w_regime or 0.20
+
+    raw_conv = (
+        lstm_component   * w_lstm  +
+        sentiment_component * w_finbert +
+        rsi_component    * w_rsi   +
+        macd_component   * w_macd  +
+        regime_component * w_regime
+    ) / w_total
+    conviction_score = max(0, min(100, int(round((raw_conv + 1.0) * 50))))
+
     result = {
-        "symbol":          symbol,
-        "signal":          signal,
-        "confidence":      f"{conf}%",
-        "tech_impact":     round(tech_score, 2),
-        "news_impact":     round(avg_sentiment, 2),
-        "news_details":    news_details,
-        "lstm_active":     lstm_active,
-        "predicted_next":  predicted_next,
-        "indicators":      indicators,
-        "multi_timeframe": mtf,
-        "market_regime":   regimen_info if indicators else {"regimen": "RANGING"},
-        "entry_price":     entry_price,
-        "target_price":    target_price,
+        "symbol":           symbol,
+        "signal":           signal,
+        "confidence":       f"{conf}%",
+        "conviction_score": conviction_score,
+        "tech_impact":      round(tech_score, 2),
+        "news_impact":      round(avg_sentiment, 2),
+        "news_details":     news_details,
+        "lstm_active":      lstm_active,
+        "predicted_next":   predicted_next,
+        "indicators":       indicators,
+        "multi_timeframe":  mtf,
+        "market_regime":    regimen_info if indicators else {"regimen": "RANGING"},
+        "entry_price":      entry_price,
+        "target_price":     target_price,
     }
 
     if redis_client:
