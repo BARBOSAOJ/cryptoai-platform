@@ -1,5 +1,36 @@
 # AUTOWORK LOG — crypto-ai-platform
 
+## Issue #21 — Agente autónomo de trading impulsado por IA
+**Fecha:** 2026-04-08
+**Commit:** 458b3e5
+
+### Lo que se implementó
+
+#### Hook `useAgenteAutonomo` (frontend/src/hooks/useAgenteAutonomo.ts)
+- Estado del agente: activo global, configuración por símbolo (toggle, cantidadMaxima, umbralConfianza), posicionesAbiertas, log (últimas 50 entradas), statsHoy (operaciones + pnlBot).
+- `procesarTick(symbol, price, insight)`: lógica de decisión con cooldown 30 s, guarda COMPRAR si señal incluye COMPRAR AND confianza >= umbral AND régimen no VOLATILE AND confluencia MTF >= 0.5 AND sin posición abierta. Vende si precio >= targetPrice o <= stopLoss o señal VENDER con confianza suficiente. Stop-loss automático al 3%, targetPrice = insight.target_price ?? precio × 1.03.
+- Persistencia de configuración en localStorage (`agente_autonomo_config`).
+- Excepciones capturadas en try/catch para no bloquear el hilo principal.
+
+#### Componente `AgentPanel` (frontend/src/components/AgentPanel.tsx)
+- Toggle global ON/OFF con indicador pulsante CSS cuando activo.
+- Stats del día: N operaciones + P&L del bot en $.
+- Botón prominente "PARADA DE EMERGENCIA" en rojo.
+- Fila por símbolo (BTCUSDT, ETHUSDT, SOLUSDT, TRUMPUSDT, PEPEUSDT, DOGEUSDT): toggle activar/desactivar, input cantidad USDT, slider umbral confianza 60–95%, badge VIGILANDO/EN_POSICIÓN/INACTIVO, detalle de posición abierta (entrada, stop, target).
+- Log en tiempo real: últimas 10 entradas con timestamp, símbolo, acción coloreada, motivo, precio.
+
+#### Integración en `App.tsx`
+- Importa `useAgenteAutonomo` y `AgentPanel`.
+- Tab type extendido a `'TRADE' | 'MEMES' | 'PORTFOLIO' | 'BOT' | 'CONFIG'`.
+- Hook inicializado; `procesarTick` llamado dentro de `fetchAiInsight` tras recibir insight.
+- Case `activeTab === 'BOT'` renderiza `<AgentPanel>` dentro de `<ErrorBoundary>`.
+
+#### `Sidebar.tsx`
+- Importa `Bot` de lucide-react.
+- Añade `{ tab: 'BOT', icon: Bot }` al array NAV entre PORTFOLIO y CONFIG.
+
+---
+
 ## Issue #20 — Señales AI visibles en el gráfico (entrada y precio objetivo)
 **Fecha:** 2026-04-08
 **Commits:** e74b4b2, 5cfa9f6
