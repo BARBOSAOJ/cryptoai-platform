@@ -24,11 +24,17 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
   }, [favorites])
 
   useEffect(() => {
+    let mounted = true
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsOpen(false)
+      if (mounted && menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      mounted = false
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   const toggleFavorite = (e: React.MouseEvent, sym: string) => {
