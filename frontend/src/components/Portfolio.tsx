@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, RefreshCw, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { TrendingUp, TrendingDown, RefreshCw, AlertCircle, Download } from 'lucide-react'
 import { apiClient } from '../api'
 import WalletPanel from './WalletPanel'
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface PortfolioStats {
   totalTrades: number
@@ -10,6 +12,10 @@ interface PortfolioStats {
   winRate: number
   totalPnl: number
   positions: Position[]
+  mejorTrade?: number
+  peorTrade?: number
+  rachaGanadora?: number
+  diasActivo?: number
 }
 
 interface Position {
@@ -22,17 +28,30 @@ interface Position {
   value: number
 }
 
+interface EquityPoint {
+  fecha: string
+  valor: number
+}
+
 interface PortfolioProps {
   user: any
   refreshTrigger?: number
+  marketData?: Record<string, any>
 }
 
-export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) {
-  const [stats, setStats]           = useState<PortfolioStats | null>(null)
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState('')
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+type Tab = 'Resumen' | 'Posiciones' | 'Estadísticas'
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export default function Portfolio({ user, refreshTrigger = 0, marketData = {} }: PortfolioProps) {
+  const [activeTab, setActiveTab]     = useState<Tab>('Resumen')
+  const [stats, setStats]             = useState<PortfolioStats | null>(null)
+  const [equityCurve, setEquityCurve] = useState<EquityPoint[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState('')
+  const [lastUpdate, setLastUpdate]   = useState<Date | null>(null)
   const [saldoCartera, setSaldoCartera] = useState<number | null>(null)
+  const [closingSymbol, setClosingSymbol] = useState<string | null>(null)
 
   const fetchStats = async () => {
     const token = localStorage.getItem('token')
@@ -41,8 +60,12 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
     setLoading(true)
     setError('')
     try {
-      const res = await apiClient.get('/portfolio/stats')
-      setStats(res.data)
+      const [statsRes, equityRes] = await Promise.all([
+        apiClient.get('/portfolio/stats'),
+        apiClient.get('/portfolio/equity-curve').catch(() => ({ data: [] }))
+      ])
+      setStats(statsRes.data)
+      setEquityCurve(equityRes.data || [])
       setLastUpdate(new Date())
     } catch (e: any) {
       if (e.response?.status === 401) {
@@ -57,21 +80,122 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
     }
   }
 
-  // Carga inicial y refresco cuando se ejecuta un trade
   useEffect(() => { fetchStats() }, [refreshTrigger])
 
-  const totalValue = stats?.positions?.reduce((acc, p) => acc + p.value, 0) ?? 0
+  // Recalcular posiciones con precios en tiempo real desde marketData
+  const posicionesEnTiempoReal = useMemo(() => {
+    if (!stats?.positions?.length) return []
+    return stats.positions
+      .map(pos => {
+        const tick = marketData[pos.symbol]
+        const precioActual = tick?.price ?? pos.currentPrice
+        const pnlDolar = (precioActual - pos.avgBuyPrice) * pos.quantity
+        const pnlPct = pos.avgBuyPrice > 0
+          ? ((precioActual - pos.avgBuyPrice) / pos.avgBuyPrice) * 100 : 0
+        const valorTotal = precioActual * pos.quantity
+        return {
+          ...pos,
+          currentPrice: precioActual,
+          pnlDolar: Math.round(pnlDolar * 100) / 100,
+          pct: Math.round(pnlPct * 100) / 100,
+          value: Math.round(valorTotal * 100) / 100
+        }
+      })
+      .sort((a, b) => b.value - a.value)
+  }, [stats?.positions, marketData])
+
+  const handleCerrarPosicion = async (pos: typeof posicionesEnTiempoReal[0]) => {
+    setClosingSymbol(pos.symbol)
+    try {
+      await apiClient.post('/portfolio/execute', {
+        symbol:     pos.symbol,
+        type:       'SELL',
+        size:       pos.quantity,
+        price:      pos.currentPrice,
+        signal:     'MANUAL_CLOSE',
+        confidence: '1.0'
+      })
+      await fetchStats()
+    } catch (e: any) {
+      setError('Error al cerrar posición: ' + (e.response?.data?.error || e.message))
+    } finally {
+      setClosingSymbol(null)
+    }
+  }
+
+  const handleExportarCSV = async () => {
+    try {
+      const res = await apiClient.get('/portfolio/trades?limit=200')
+      const trades: any[] = res.data
+      if (!trades.length) return
+
+      const headers = ['ID', 'Symbol', 'Side', 'Quantity', 'EntryPrice', 'Total', 'Signal', 'Confidence', 'Timestamp']
+      const rows = trades.map(t => [
+        t.id, t.symbol, t.side,
+        t.quantity, t.entryPrice, t.total,
+        t.signal || '', t.confidence || '', t.timestamp
+      ])
+      const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `trades_${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      setError('Error al exportar: ' + (e.response?.data?.error || e.message))
+    }
+  }
+
+  // Comparativa BTC
+  const btcComparativa = useMemo(() => {
+    const hist = marketData['BTCUSDT']?.history
+    if (!hist || hist.length < 2) return null
+    const inicio = hist[0]
+    const fin    = hist[hist.length - 1]
+    if (!inicio || !fin || inicio === 0) return null
+    const pct = ((fin - inicio) / inicio) * 100
+    return Math.round(pct * 100) / 100
+  }, [marketData])
+
+  const portfolioVariacion = useMemo(() => {
+    if (equityCurve.length < 2) return null
+    const inicio = equityCurve[0].valor
+    const fin    = equityCurve[equityCurve.length - 1].valor
+    if (!inicio) return null
+    const pct = ((fin - inicio) / inicio) * 100
+    return Math.round(pct * 100) / 100
+  }, [equityCurve])
+
+  const totalValue = posicionesEnTiempoReal.reduce((acc, p) => acc + p.value, 0)
   const balance = saldoCartera !== null ? saldoCartera : (user.balance || 0)
 
   return (
     <div style={wrapStyle}>
-      {/* Cartera virtual — arriba del grid de stats */}
       <WalletPanel onSaldoActualizado={setSaldoCartera} />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-        <p style={sectionLabel}>Resumen</p>
+      {/* Header con tabs y botón refresh */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {(['Resumen', 'Posiciones', 'Estadísticas'] as Tab[]).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                ...tabBtnStyle,
+                background:  activeTab === tab ? '#111e35' : 'transparent',
+                color:       activeTab === tab ? '#c8d8ec' : '#2c4268',
+                borderColor: activeTab === tab ? '#1a2f50' : 'transparent'
+              }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
         <button onClick={fetchStats} disabled={loading} style={refreshBtnStyle} title="Actualizar">
-          <RefreshCw size={12} color={loading ? '#1a2840' : '#2c4268'} strokeWidth={1.75} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          <RefreshCw size={12} color={loading ? '#1a2840' : '#2c4268'} strokeWidth={1.75}
+            style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
           {lastUpdate && (
             <span style={{ fontSize: '9px', color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', marginLeft: '6px' }}>
               {lastUpdate.toLocaleTimeString()}
@@ -87,81 +211,187 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
         </div>
       )}
 
-      {/* Skeleton durante carga inicial (sin datos previos) */}
       {loading && !stats && !error && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
           {[1, 2, 3].map(i => (
             <div key={i} style={{ height: '72px', background: '#091220', border: '1px solid #111e35', borderRadius: '12px', animation: 'pulse 1.4s ease-in-out infinite', opacity: 0.7 }} />
           ))}
-          <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
+          <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.8} } @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }`}</style>
         </div>
       )}
 
-      <div style={{ ...statsGridStyle, opacity: loading && stats ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-        <div style={statCardStyle}>
-          <div style={statLabelStyle}>Saldo disponible</div>
-          <div style={statValueStyle}>${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-          {totalValue > 0 && (
-            <div style={{ fontSize: '11px', color: '#486080', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
-              +${totalValue.toFixed(2)} en posiciones
+      {/* ── TAB: Resumen ── */}
+      {activeTab === 'Resumen' && (
+        <>
+          <div style={{ ...statsGridStyle, opacity: loading && stats ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+            <div style={statCardStyle}>
+              <div style={statLabelStyle}>Saldo disponible</div>
+              <div style={statValueStyle}>${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              {totalValue > 0 && (
+                <div style={{ fontSize: '11px', color: '#486080', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+                  +${totalValue.toFixed(2)} en posiciones
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div style={statCardStyle}>
-          <div style={statLabelStyle}>P&L total</div>
-          {loading ? (
-            <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
-          ) : (
-            <div style={{ ...statValueStyle, color: stats && stats.totalPnl >= 0 ? '#00d060' : '#ff3b3b' }}>
-              {stats ? `${stats.totalPnl >= 0 ? '+' : ''}$${stats.totalPnl.toFixed(2)}` : '—'}
+            <div style={statCardStyle}>
+              <div style={statLabelStyle}>P&L total</div>
+              {loading ? (
+                <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
+              ) : (
+                <div style={{ ...statValueStyle, color: stats && stats.totalPnl >= 0 ? '#00d060' : '#ff3b3b' }}>
+                  {stats ? `${stats.totalPnl >= 0 ? '+' : ''}$${stats.totalPnl.toFixed(2)}` : '—'}
+                </div>
+              )}
+              <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+                {stats ? `${stats.totalTrades} operaciones` : 'Cargando...'}
+              </div>
             </div>
-          )}
-          <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
-            {stats ? `${stats.totalTrades} operaciones` : 'Cargando...'}
+
+            <div style={statCardStyle}>
+              <div style={statLabelStyle}>Win rate</div>
+              {loading ? (
+                <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
+              ) : (
+                <div style={statValueStyle}>{stats ? `${stats.winRate}%` : '—'}</div>
+              )}
+              <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
+                {stats ? `${stats.wins} / ${stats.wins + stats.losses} ganadoras` : 'Sin trades aún'}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div style={statCardStyle}>
-          <div style={statLabelStyle}>Win rate</div>
-          {loading ? (
-            <div style={{ ...statValueStyle, color: '#1e3050' }}>—</div>
-          ) : (
-            <div style={statValueStyle}>{stats ? `${stats.winRate}%` : '—'}</div>
-          )}
-          <div style={{ fontSize: '11px', color: '#2c4268', marginTop: '4px', fontFamily: 'JetBrains Mono, monospace' }}>
-            {stats ? `${stats.wins} / ${stats.wins + stats.losses} ganadoras` : 'Sin trades aún'}
-          </div>
-        </div>
-      </div>
+          <p style={{ ...sectionLabel, marginTop: '28px', marginBottom: '12px' }}>Posiciones abiertas</p>
+          <PositionsTable
+            positions={posicionesEnTiempoReal}
+            loading={loading}
+            stats={stats}
+            closingSymbol={closingSymbol}
+            onCerrar={handleCerrarPosicion}
+            compact
+          />
+        </>
+      )}
 
-      <p style={{ ...sectionLabel, marginTop: '28px', marginBottom: '12px' }}>Posiciones abiertas</p>
+      {/* ── TAB: Posiciones ── */}
+      {activeTab === 'Posiciones' && (
+        <>
+          <p style={{ ...sectionLabel, marginBottom: '12px' }}>Posiciones abiertas en tiempo real</p>
+          <PositionsTable
+            positions={posicionesEnTiempoReal}
+            loading={loading}
+            stats={stats}
+            closingSymbol={closingSymbol}
+            onCerrar={handleCerrarPosicion}
+            compact={false}
+          />
+        </>
+      )}
 
-      {loading ? (
-        <div style={emptyStyle}>Cargando posiciones...</div>
-      ) : !stats?.positions?.length ? (
-        <div style={emptyStyle}>
-          Sin posiciones abiertas. Ejecuta tu primera orden desde el terminal de trading.
+      {/* ── TAB: Estadísticas ── */}
+      {activeTab === 'Estadísticas' && (
+        <TabEstadisticas
+          stats={stats}
+          equityCurve={equityCurve}
+          btcComparativa={btcComparativa}
+          portfolioVariacion={portfolioVariacion}
+          loading={loading}
+          onExportarCSV={handleExportarCSV}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Tabla de Posiciones ──────────────────────────────────────────────────────
+
+interface PositionsTableProps {
+  positions: Array<{
+    symbol: string; coin: string; quantity: number; avgBuyPrice: number;
+    currentPrice: number; pnlDolar: number; pct: number; value: number
+  }>
+  loading: boolean
+  stats: PortfolioStats | null
+  closingSymbol: string | null
+  onCerrar: (pos: any) => void
+  compact: boolean
+}
+
+function PositionsTable({ positions, loading, stats, closingSymbol, onCerrar, compact }: PositionsTableProps) {
+  if (loading && !stats) return <div style={emptyStyle}>Cargando posiciones...</div>
+  if (!positions.length) return (
+    <div style={emptyStyle}>
+      Sin posiciones abiertas. Ejecuta tu primera orden desde el terminal de trading.
+    </div>
+  )
+
+  return (
+    <div style={tableStyle}>
+      {!compact && (
+        <div style={{ ...tableRowStyle, background: '#071019', borderBottom: '1px solid #111e35', fontSize: '9px', color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', textTransform: 'uppercase' }}>
+          <span style={{ flex: 2 }}>Activo</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>Precio entrada</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>Precio actual</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>P&L $</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>P&L %</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>Valor total</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>Acción</span>
         </div>
-      ) : (
-        <div style={tableStyle}>
-          {stats.positions.map((pos, i) => (
-            <div
-              key={pos.symbol}
-              style={{ ...tableRowStyle, borderBottom: i < stats.positions.length - 1 ? '1px solid #0e0e0e' : 'none' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={coinDotStyle}>{pos.coin.slice(0, 1)}</div>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>{pos.coin}</div>
-                  <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>
-                    {pos.quantity.toLocaleString(undefined, { maximumSignificantDigits: 6 })} {pos.coin}
-                  </div>
-                  <div style={{ fontSize: '9px', color: '#1c2c44', fontFamily: 'JetBrains Mono, monospace', marginTop: '1px' }}>
-                    Entrada: ${pos.avgBuyPrice.toLocaleString()}
-                  </div>
+      )}
+      {positions.map((pos, i) => {
+        const ganando = pos.pnlDolar >= 0
+        const rowBg   = ganando ? 'rgba(0,208,96,0.03)' : 'rgba(255,59,59,0.03)'
+        return (
+          <div
+            key={pos.symbol}
+            style={{
+              ...tableRowStyle,
+              background: rowBg,
+              borderBottom: i < positions.length - 1 ? '1px solid #0e0e0e' : 'none',
+              flexWrap: 'wrap',
+              gap: '8px'
+            }}
+          >
+            <div style={{ flex: 2, display: 'flex', alignItems: 'center', gap: '10px', minWidth: '120px' }}>
+              <div style={coinDotStyle}>{pos.coin.slice(0, 1)}</div>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600 }}>{pos.coin}</div>
+                <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>
+                  {pos.quantity.toLocaleString(undefined, { maximumSignificantDigits: 6 })} {pos.coin}
                 </div>
               </div>
+            </div>
+            {!compact ? (
+              <>
+                <div style={{ flex: 1, textAlign: 'right', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#486080' }}>
+                  ${pos.avgBuyPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div style={{ flex: 1, textAlign: 'right', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace' }}>
+                  ${pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div style={{ flex: 1, textAlign: 'right', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: ganando ? '#00d060' : '#ff3b3b', fontWeight: 600 }}>
+                  {ganando ? '+' : ''}${pos.pnlDolar.toFixed(2)}
+                </div>
+                <div style={{ flex: 1, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                  {ganando ? <TrendingUp size={10} color="#00d060" /> : <TrendingDown size={10} color="#ff3b3b" />}
+                  <span style={{ fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: ganando ? '#00d060' : '#ff3b3b' }}>
+                    {pos.pct >= 0 ? '+' : ''}{pos.pct}%
+                  </span>
+                </div>
+                <div style={{ flex: 1, textAlign: 'right', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace' }}>
+                  ${pos.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div style={{ flex: 1, textAlign: 'right' }}>
+                  <button
+                    onClick={() => onCerrar(pos)}
+                    disabled={closingSymbol === pos.symbol}
+                    style={closeBtnStyle}
+                  >
+                    {closingSymbol === pos.symbol ? '...' : 'Cerrar'}
+                  </button>
+                </div>
+              </>
+            ) : (
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', marginBottom: '4px' }}>
                   ${pos.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -175,13 +405,176 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
                   </span>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
+
+// ─── Tab Estadísticas ─────────────────────────────────────────────────────────
+
+interface TabEstadisticasProps {
+  stats: PortfolioStats | null
+  equityCurve: EquityPoint[]
+  btcComparativa: number | null
+  portfolioVariacion: number | null
+  loading: boolean
+  onExportarCSV: () => void
+}
+
+function TabEstadisticas({ stats, equityCurve, btcComparativa, portfolioVariacion, loading, onExportarCSV }: TabEstadisticasProps) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+      {/* Métricas */}
+      <div>
+        <p style={{ ...sectionLabel, marginBottom: '12px' }}>Métricas avanzadas</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+          <MetricCard label="Mejor trade" value={loading ? '—' : stats ? `+$${stats.mejorTrade?.toFixed(2) ?? '0.00'}` : '—'} color="#00d060" />
+          <MetricCard label="Peor trade"  value={loading ? '—' : stats ? `$${stats.peorTrade?.toFixed(2) ?? '0.00'}` : '—'}  color="#ff3b3b" />
+          <MetricCard label="Racha ganadora" value={loading ? '—' : stats ? `${stats.rachaGanadora ?? 0}` : '—'} color="#c8d8ec" />
+          <MetricCard label="Días activo" value={loading ? '—' : stats ? `${stats.diasActivo ?? 0}` : '—'} color="#c8d8ec" />
+        </div>
+      </div>
+
+      {/* Comparativa BTC */}
+      {(portfolioVariacion !== null || btcComparativa !== null) && (
+        <div style={{ background: '#091220', border: '1px solid #111e35', borderRadius: '14px', padding: '16px 20px' }}>
+          <p style={{ ...sectionLabel, marginBottom: '12px' }}>Comparativa vs BTC</p>
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+            {portfolioVariacion !== null && (
+              <div>
+                <div style={{ fontSize: '10px', color: '#2c4268', marginBottom: '4px', fontFamily: 'JetBrains Mono, monospace' }}>Tu portfolio</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: portfolioVariacion >= 0 ? '#00d060' : '#ff3b3b' }}>
+                  {portfolioVariacion >= 0 ? '+' : ''}{portfolioVariacion}%
+                </div>
+              </div>
+            )}
+            {btcComparativa !== null && (
+              <div>
+                <div style={{ fontSize: '10px', color: '#2c4268', marginBottom: '4px', fontFamily: 'JetBrains Mono, monospace' }}>BTC (en sesión)</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: btcComparativa >= 0 ? '#00d060' : '#ff3b3b' }}>
+                  {btcComparativa >= 0 ? '+' : ''}{btcComparativa}%
+                </div>
+              </div>
+            )}
+            {portfolioVariacion !== null && btcComparativa !== null && (
+              <div style={{ borderLeft: '1px solid #111e35', paddingLeft: '24px' }}>
+                <div style={{ fontSize: '10px', color: '#2c4268', marginBottom: '4px', fontFamily: 'JetBrains Mono, monospace' }}>Diferencia</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: (portfolioVariacion - btcComparativa) >= 0 ? '#00d060' : '#ff3b3b' }}>
+                  {(portfolioVariacion - btcComparativa) >= 0 ? '+' : ''}{Math.round((portfolioVariacion - btcComparativa) * 100) / 100}%
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Curva de equity SVG */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <p style={sectionLabel}>Curva de equity</p>
+          <button onClick={onExportarCSV} style={exportBtnStyle}>
+            <Download size={11} color="#2c4268" strokeWidth={1.75} />
+            <span style={{ fontSize: '10px', color: '#2c4268', marginLeft: '5px', fontFamily: 'JetBrains Mono, monospace' }}>Exportar CSV</span>
+          </button>
+        </div>
+        {equityCurve.length < 2 ? (
+          <div style={emptyStyle}>Sin suficientes datos para mostrar la curva de equity.</div>
+        ) : (
+          <EquitySVGChart data={equityCurve} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Metric Card ──────────────────────────────────────────────────────────────
+
+function MetricCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={statCardStyle}>
+      <div style={statLabelStyle}>{label}</div>
+      <div style={{ ...statValueStyle, fontSize: '20px', color }}>{value}</div>
+    </div>
+  )
+}
+
+// ─── Equity SVG Chart ─────────────────────────────────────────────────────────
+
+function EquitySVGChart({ data }: { data: EquityPoint[] }) {
+  const W = 600
+  const H = 160
+  const PAD = { top: 12, right: 20, bottom: 32, left: 60 }
+
+  const valores = data.map(d => d.valor)
+  const minV = Math.min(...valores)
+  const maxV = Math.max(...valores)
+  const rangoV = maxV - minV || 1
+
+  const toX = (i: number) => PAD.left + (i / (data.length - 1)) * (W - PAD.left - PAD.right)
+  const toY = (v: number) => PAD.top + ((maxV - v) / rangoV) * (H - PAD.top - PAD.bottom)
+
+  const puntos = data.map((d, i) => `${toX(i)},${toY(d.valor)}`).join(' ')
+  const areaPath = `M${toX(0)},${toY(data[0].valor)} ${data.map((d, i) => `L${toX(i)},${toY(d.valor)}`).join(' ')} L${toX(data.length - 1)},${H - PAD.bottom} L${toX(0)},${H - PAD.bottom} Z`
+
+  const isUp = data[data.length - 1].valor >= data[0].valor
+  const lineColor = isUp ? '#00d060' : '#ff3b3b'
+  const areaColor = isUp ? 'rgba(0,208,96,0.08)' : 'rgba(255,59,59,0.08)'
+
+  // Etiquetas eje X: mostrar hasta 5 fechas
+  const xLabels: number[] = []
+  const step = Math.max(1, Math.floor(data.length / 4))
+  for (let i = 0; i < data.length; i += step) xLabels.push(i)
+  if (xLabels[xLabels.length - 1] !== data.length - 1) xLabels.push(data.length - 1)
+
+  // Etiquetas eje Y: 4 niveles
+  const yLevels = [minV, minV + rangoV / 3, minV + (rangoV * 2) / 3, maxV]
+
+  return (
+    <div style={{ background: '#091220', border: '1px solid #111e35', borderRadius: '14px', padding: '16px', overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Grid lines */}
+        {yLevels.map((v, i) => (
+          <line key={i} x1={PAD.left} x2={W - PAD.right} y1={toY(v)} y2={toY(v)}
+            stroke="#0e1e32" strokeWidth={1} strokeDasharray="4,4" />
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill={areaColor} />
+
+        {/* Line */}
+        <polyline points={puntos} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round" />
+
+        {/* Dots */}
+        {data.map((d, i) => (
+          <circle key={i} cx={toX(i)} cy={toY(d.valor)} r={data.length > 20 ? 1.5 : 3}
+            fill={lineColor} />
+        ))}
+
+        {/* Y axis labels */}
+        {yLevels.map((v, i) => (
+          <text key={i} x={PAD.left - 6} y={toY(v) + 4}
+            textAnchor="end" fontSize={9} fill="#2c4268" fontFamily="JetBrains Mono, monospace">
+            ${Math.round(v).toLocaleString()}
+          </text>
+        ))}
+
+        {/* X axis labels */}
+        {xLabels.map(i => (
+          <text key={i} x={toX(i)} y={H - 6}
+            textAnchor="middle" fontSize={9} fill="#2c4268" fontFamily="JetBrains Mono, monospace">
+            {data[i].fecha.slice(5)}
+          </text>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const wrapStyle: React.CSSProperties = {
   padding: '32px 36px', background: '#060d1a', height: '100%',
@@ -208,12 +601,13 @@ const tableStyle: React.CSSProperties = {
   background: '#091220', border: '1px solid #111e35', borderRadius: '14px', overflow: 'hidden'
 }
 const tableRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px'
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px'
 }
 const coinDotStyle: React.CSSProperties = {
   width: '34px', height: '34px', borderRadius: '50%', background: '#111e35',
   border: '1px solid #1a1a1a', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: '#486080'
+  justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: '#486080',
+  flexShrink: 0
 }
 const emptyStyle: React.CSSProperties = {
   background: '#091220', border: '1px solid #111e35', borderRadius: '14px',
@@ -227,4 +621,17 @@ const errorBoxStyle: React.CSSProperties = {
 const refreshBtnStyle: React.CSSProperties = {
   background: '#0b1424', border: '1px solid #111e35', borderRadius: '8px',
   padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center'
+}
+const tabBtnStyle: React.CSSProperties = {
+  fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', padding: '6px 14px',
+  borderRadius: '8px', border: '1px solid transparent', cursor: 'pointer', transition: 'all 0.15s'
+}
+const closeBtnStyle: React.CSSProperties = {
+  background: 'rgba(255,59,59,0.08)', border: '1px solid rgba(255,59,59,0.2)',
+  borderRadius: '6px', padding: '4px 10px', fontSize: '10px', color: '#ff6b6b',
+  cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace'
+}
+const exportBtnStyle: React.CSSProperties = {
+  background: '#091220', border: '1px solid #111e35', borderRadius: '8px',
+  padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center'
 }

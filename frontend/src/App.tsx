@@ -312,7 +312,7 @@ export default function App() {
           )}
           {activeTab === 'PORTFOLIO' && (
             <ErrorBoundary fallback="Error en el portfolio">
-              <Portfolio user={user} refreshTrigger={portfolioVersion} />
+              <Portfolio user={user} refreshTrigger={portfolioVersion} marketData={marketData} />
             </ErrorBoundary>
           )}
           {activeTab === 'BOT' && (
