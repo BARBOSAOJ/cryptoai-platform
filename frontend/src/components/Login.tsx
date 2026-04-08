@@ -39,7 +39,12 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     try {
       const res = await authClient.post('/auth/login', { email, password })
       if (res.data.token) {
-        localStorage.setItem('token', res.data.token)
+        try {
+          localStorage.setItem('token', res.data.token)
+        } catch {
+          // localStorage lleno o deshabilitado — usar sessionStorage como fallback
+          try { sessionStorage.setItem('token', res.data.token) } catch { /* ignorar */ }
+        }
         onLoginSuccess({ name: email.split('@')[0].toUpperCase(), plan: 'PRO ELITE' })
       }
     } catch (e: any) {

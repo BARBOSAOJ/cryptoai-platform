@@ -14,13 +14,19 @@ const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'D
 
 export default function App() {
   const [loading, setLoading]         = useState(true)
-  const [isLoggedIn, setIsLoggedIn]   = useState(() => !!localStorage.getItem('token'))
+  const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
   const [activeTab, setActiveTab]     = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'>('TRADE')
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
-  const [user, setUser] = useState({
-    name:    localStorage.getItem('userName') || '',
-    plan:    localStorage.getItem('userPlan') || 'PRO ELITE',
-    balance: parseFloat(localStorage.getItem('userBalance') || '12500.50')
+  const [user, setUser] = useState(() => {
+    try {
+      return {
+        name:    localStorage.getItem('userName') || '',
+        plan:    localStorage.getItem('userPlan') || 'PRO ELITE',
+        balance: parseFloat(localStorage.getItem('userBalance') || '12500.50')
+      }
+    } catch {
+      return { name: '', plan: 'PRO ELITE', balance: 12500.50 }
+    }
   })
 
   const [marketData, setMarketData]   = useState<Record<string, any>>({})
