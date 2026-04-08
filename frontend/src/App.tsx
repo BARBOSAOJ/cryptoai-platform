@@ -8,6 +8,7 @@ import Portfolio from './components/Portfolio'
 import Settings from './components/Settings'
 import Login from './components/Login'
 import LoadingSplash from './components/LoadingSplash'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
 
@@ -249,30 +250,38 @@ export default function App() {
         />
         <main style={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === 'TRADE' && (
-            <TradingTerminal
-              symbol={currentSymbol}
-              insight={aiInsights[currentSymbol]}
-              history={tradeHistory}
-              user={user}
-              onTradeExecuted={handleTradeExecuted}
-            />
+            <ErrorBoundary fallback="Error en el terminal de trading">
+              <TradingTerminal
+                symbol={currentSymbol}
+                insight={aiInsights[currentSymbol]}
+                history={tradeHistory}
+                user={user}
+                onTradeExecuted={handleTradeExecuted}
+              />
+            </ErrorBoundary>
           )}
           {activeTab === 'MEMES' && (
-            <MemeRadar
-              onSelect={setCurrentSymbol}
-              marketData={marketData}
-              aiInsights={aiInsights}
-            />
+            <ErrorBoundary fallback="Error en el radar de memes">
+              <MemeRadar
+                onSelect={setCurrentSymbol}
+                marketData={marketData}
+                aiInsights={aiInsights}
+              />
+            </ErrorBoundary>
           )}
           {activeTab === 'PORTFOLIO' && (
-            <Portfolio user={user} refreshTrigger={portfolioVersion} />
+            <ErrorBoundary fallback="Error en el portfolio">
+              <Portfolio user={user} refreshTrigger={portfolioVersion} />
+            </ErrorBoundary>
           )}
           {activeTab === 'CONFIG' && (
-            <Settings
-              setRefreshInterval={setRefreshInterval}
-              currentInterval={refreshInterval}
-              aiHealth={aiHealth}
-            />
+            <ErrorBoundary fallback="Error en la configuración">
+              <Settings
+                setRefreshInterval={setRefreshInterval}
+                currentInterval={refreshInterval}
+                aiHealth={aiHealth}
+              />
+            </ErrorBoundary>
           )}
         </main>
       </div>
