@@ -1597,6 +1597,83 @@ async def backtest_resultado(symbol: str):
 
     raise HTTPException(status_code=404, detail=f"Sin datos de backtest para {symbol}. Lanza POST /backtest/{symbol}")
 
+@app.get("/risk/{symbol}")
+async def calcular_riesgo(symbol: str, price: float = 0.0, saldo: float = 1000.0):
+    """
+    Calcula gestión de riesgo para un símbolo usando ATR real de Binance.
+    Devuelve stop_loss, take_profit, tamaño de posición y ratio R/B.
+    """
+    symbol = symbol.upper().strip()
+    if price <= 0:
+        raise HTTPException(status_code=400, detail="El parámetro price debe ser > 0")
+    if saldo <= 0:
+        raise HTTPException(status_code=400, detail="El parámetro saldo debe ser > 0")
+
+    # Obtener 100 velas 1h con OHLCV completo
+    try:
+        url  = f"{BINANCE_KLINES}?symbol={symbol}&interval=1h&limit=100"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail=f"Sin datos para {symbol}")
+
+        rows = resp.json()
+        if len(rows) < 15:
+            raise HTTPException(status_code=422, detail="Datos insuficientes para calcular ATR")
+
+        if _has_ml:
+            df = pd.DataFrame(rows, columns=[
+                'ts','open','high','low','close','vol',
+                'close_ts','quote_vol','trades','taker_base','taker_quote','ignore'
+            ])
+            df['Close']  = df['close'].astype(float)
+            df['High']   = df['high'].astype(float)
+            df['Low']    = df['low'].astype(float)
+            df['Volume'] = df['vol'].astype(float)
+
+            atr_val = IndicadoresTecnicos.atr(df, window=14)
+
+            # Detectar régimen usando los precios reales
+            regimen_info = DetectorRegimen.detectar(df, atr_val)
+            regimen = regimen_info.get("regimen", "RANGING")
+        else:
+            # Sin numpy/pandas: estimación básica
+            closes = [float(r[4]) for r in rows]
+            highs  = [float(r[2]) for r in rows]
+            lows   = [float(r[3]) for r in rows]
+            trs = [highs[i] - lows[i] for i in range(len(closes))]
+            atr_val = sum(trs[-14:]) / min(14, len(trs))
+            regimen = "RANGING"
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Error calculando riesgo para {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Protección: ATR mínimo para evitar divisiones por cero
+    if atr_val <= 0:
+        atr_val = price * 0.005  # 0.5% del precio como fallback
+
+    # Cálculos de riesgo
+    stop_loss    = round(price - 2.0 * atr_val, 8)
+    take_profit  = round(price + 3.0 * atr_val, 8)
+    importe_riesgo  = round(saldo * 0.01, 4)           # 1% del saldo
+    tamano_posicion = round(importe_riesgo / atr_val, 6) if atr_val > 0 else 0.0
+    ratio_rb        = 1.5  # fijo: 3×ATR beneficio / 2×ATR riesgo
+
+    return {
+        "symbol":          symbol,
+        "price":           price,
+        "stop_loss":       stop_loss,
+        "take_profit":     take_profit,
+        "atr":             round(atr_val, 6),
+        "tamano_posicion": tamano_posicion,
+        "importe_riesgo":  importe_riesgo,
+        "ratio_rb":        ratio_rb,
+        "regimen":         regimen,
+    }
+
+
 @app.get("/health")
 async def health():
     estado_retrain = gestor_reentrenamiento.estado_actual()
