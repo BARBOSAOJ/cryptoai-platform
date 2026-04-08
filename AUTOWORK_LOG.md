@@ -1,5 +1,37 @@
 # AUTOWORK LOG — crypto-ai-platform
 
+## Issue #24 — Roles de usuario, panel de administración y edición de perfil
+**Fecha:** 2026-04-08
+**Commits:** 624936f, fc7a5c5, 10539ba, 71dacca
+
+### Lo que se implementó
+
+#### user-service — `RecursoAdmin.java` (nuevo)
+- `GET /admin/users?page=0&size=10`: lista paginada de usuarios (id, email, fullName, roles, createdAt). Solo `@RolesAllowed("ADMIN")`.
+- `PUT /admin/users/{id}/rol` body `{"rol":"ADMIN"|"USER"}`: cambia el rol del usuario. Valida que el admin no pueda quitarse su propio rol.
+- `DELETE /admin/users/{id}`: elimina el usuario junto a sus settings y alertas. Valida auto-eliminación.
+
+#### user-service — `UserSettingsResource.java`
+- `@RolesAllowed` ampliado a `{"USER", "ADMIN"}` para que los admins también puedan acceder a `/user/profile` y `/user/change-password`.
+- `PUT /user/profile` y `POST /user/change-password` ya existían y funcionan correctamente.
+
+#### Frontend — `AdminPanel.tsx` (nuevo)
+- Tabla de usuarios con email, nombre, rol (badge color), fecha de registro.
+- Botón "Hacer ADMIN" / "Quitar ADMIN" con llamada a `authClient.put('/admin/users/{id}/rol')`.
+- Botón "Eliminar usuario" con confirmación (doble clic).
+- Paginación anterior/siguiente.
+
+#### Frontend — `Settings.tsx`
+- Sección "Mi perfil": campo nombre completo con carga desde `/user/profile` y guardado.
+- Sección "Seguridad": 3 inputs (contraseña actual, nueva, confirmar) con validación y feedback.
+- Badge del rol actual (USER/ADMIN con colores distintos) junto al título de sección.
+- Integración de `<AdminPanel />` al final si el usuario tiene rol ADMIN.
+
+#### Frontend — `Sidebar.tsx`
+- Badge compacto de rol (USER/ADMIN) encima del botón de logout, con colores diferentes.
+
+---
+
 ## Issue #23 — Panel de posiciones activas en tiempo real y estadísticas de perfil
 **Fecha:** 2026-04-08
 **Commits:** ebc3057, caa659e
