@@ -327,13 +327,54 @@ public class OrderResource {
             }
         }
 
+        // Mejor trade, peor trade, racha ganadora, días activo
+        double mejorTrade = 0.0;
+        double peorTrade  = 0.0;
+        int rachaGanadora = 0;
+        int rachaActual   = 0;
+        List<Double> pnlPorPar = new ArrayList<>();
+
+        for (Map.Entry<String, List<Trade>> entry : bySymbol.entrySet()) {
+            List<Trade> buys  = entry.getValue().stream().filter(t -> "BUY".equals(t.side))
+                .sorted(Comparator.comparing(t -> t.timestamp)).collect(Collectors.toList());
+            List<Trade> sells = entry.getValue().stream().filter(t -> "SELL".equals(t.side))
+                .sorted(Comparator.comparing(t -> t.timestamp)).collect(Collectors.toList());
+            int pairs = Math.min(buys.size(), sells.size());
+            for (int i = 0; i < pairs; i++) {
+                double pnl = (sells.get(i).entryPrice - buys.get(i).entryPrice) * buys.get(i).quantity;
+                pnlPorPar.add(pnl);
+            }
+        }
+
+        // Ordenar por timestamp para calcular racha correctamente
+        // (ya tenemos la lista global de PnL por orden de ejecución; aproximamos con la lista tal cual)
+        for (double pnl : pnlPorPar) {
+            if (pnl > mejorTrade) mejorTrade = pnl;
+            if (pnl < peorTrade)  peorTrade  = pnl;
+            if (pnl > 0) {
+                rachaActual++;
+                if (rachaActual > rachaGanadora) rachaGanadora = rachaActual;
+            } else {
+                rachaActual = 0;
+            }
+        }
+
+        // Días distintos con trades
+        long diasActivo = trades.stream()
+            .map(t -> t.timestamp.atZone(java.time.ZoneOffset.UTC).toLocalDate())
+            .distinct().count();
+
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("totalTrades", trades.size());
-        stats.put("wins",        wins);
-        stats.put("losses",      totalPairs - wins);
-        stats.put("winRate",     totalPairs > 0 ? Math.round((wins * 100.0 / totalPairs) * 10) / 10.0 : 0.0);
-        stats.put("totalPnl",   Math.round(totalPnl * 100.0) / 100.0);
-        stats.put("positions",  positions);
+        stats.put("totalTrades",   trades.size());
+        stats.put("wins",          wins);
+        stats.put("losses",        totalPairs - wins);
+        stats.put("winRate",       totalPairs > 0 ? Math.round((wins * 100.0 / totalPairs) * 10) / 10.0 : 0.0);
+        stats.put("totalPnl",      Math.round(totalPnl * 100.0) / 100.0);
+        stats.put("positions",     positions);
+        stats.put("mejorTrade",    Math.round(mejorTrade * 100.0) / 100.0);
+        stats.put("peorTrade",     Math.round(peorTrade  * 100.0) / 100.0);
+        stats.put("rachaGanadora", rachaGanadora);
+        stats.put("diasActivo",    diasActivo);
         return stats;
     }
 }
