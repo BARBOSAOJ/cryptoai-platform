@@ -59,13 +59,14 @@ export default function ChartPanel({ symbol, insight }: Props) {
   const ivRef     = useRef<Interval>('1h')
   const typeRef   = useRef<ChartType>('area')
 
-  const [iv,       setIv]      = useState<Interval>('1m')
-  const [type,     setType]    = useState<ChartType>('area')
-  const [lastBar,  setLastBar] = useState<Bar | null>(null)
-  const [prevClose,setPrev]    = useState<number | null>(null)
-  const [hover,    setHover]   = useState<Hover | null>(null)
-  const [loading,  setLoading] = useState(true)
-  const [error,    setError]   = useState(false)
+  const [iv,         setIv]        = useState<Interval>('1m')
+  const [type,       setType]      = useState<ChartType>('area')
+  const [lastBar,    setLastBar]   = useState<Bar | null>(null)
+  const [prevClose,  setPrev]      = useState<number | null>(null)
+  const [hover,      setHover]     = useState<Hover | null>(null)
+  const [loading,    setLoading]   = useState(true)
+  const [error,      setError]     = useState(false)
+  const [showAI,     setShowAI]    = useState(true)
 
   const isBuy      = insight?.signal?.includes('COMPRAR')
   const confidence = parseInt(insight?.confidence || '50')
@@ -193,6 +194,60 @@ export default function ChartPanel({ symbol, insight }: Props) {
     return () => clearInterval(id)
   }, [load, iv, type])
 
+  // ─── AI Overlays ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const series = candleRef.current?.options().visible ? candleRef.current : areaRef.current
+    if (!series) return
+
+    // Remove all existing AI price lines before re-adding
+    try { (series as any)._priceLines?.forEach((pl: any) => series.removePriceLine(pl)) } catch {}
+
+    if (!showAI || !insight) return
+
+    const lines: any[] = []
+
+    if (insight.entry_price && insight.entry_price > 0) {
+      lines.push(series.createPriceLine({
+        price:     insight.entry_price,
+        color:     '#2ebd85',
+        lineWidth: 1,
+        lineStyle: 2, // dashed
+        axisLabelVisible: true,
+        title:     'Entrada IA',
+      }))
+    }
+
+    if (insight.target_price && insight.target_price > 0) {
+      lines.push(series.createPriceLine({
+        price:     insight.target_price,
+        color:     '#f97316',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title:     'Objetivo IA',
+      }))
+    }
+
+    if (insight.predicted_next && insight.predicted_next > 0) {
+      lines.push(series.createPriceLine({
+        price:     insight.predicted_next,
+        color:     '#3b82f6',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title:     'LSTM',
+      }))
+    }
+
+    // Store references for cleanup
+    ;(series as any)._priceLines = lines
+
+    return () => {
+      try { lines.forEach(pl => series.removePriceLine(pl)) } catch {}
+      ;(series as any)._priceLines = []
+    }
+  }, [insight, showAI, type])
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ width: '100%', height: '100%', background: C.bg, display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
@@ -219,6 +274,13 @@ export default function ChartPanel({ symbol, insight }: Props) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* AI overlay toggle */}
+          <button
+            onClick={() => setShowAI(v => !v)}
+            style={{ background: showAI ? 'rgba(59,130,246,0.15)' : C.surface, border: `1px solid ${showAI ? 'rgba(59,130,246,0.4)' : 'transparent'}`, color: showAI ? C.blue : C.dimText, borderRadius: '7px', padding: '4px 11px', fontSize: '11px', fontWeight: showAI ? 600 : 400, cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
+          >
+            Overlays IA
+          </button>
           {/* Tipo */}
           <div style={{ display: 'flex', background: C.surface, borderRadius: '8px', padding: '3px', gap: '2px' }}>
             {(['area', 'candle'] as ChartType[]).map(t => (
@@ -276,13 +338,35 @@ export default function ChartPanel({ symbol, insight }: Props) {
 
       {/* AI Badge */}
       {insight?.signal && (
-        <div style={{ position: 'absolute', bottom: '24px', left: '20px', zIndex: 5, background: 'rgba(6,16,30,0.88)', backdropFilter: 'blur(20px)', border: `1px solid ${isBuy ? C.greenBd : C.redBd}`, borderRadius: '14px', padding: '14px 18px', minWidth: '140px', boxShadow: `0 8px 32px ${isBuy ? 'rgba(46,189,133,0.1)' : 'rgba(246,70,93,0.08)'}` }}>
+        <div style={{ position: 'absolute', bottom: '24px', left: '20px', zIndex: 5, background: 'rgba(6,16,30,0.88)', backdropFilter: 'blur(20px)', border: `1px solid ${isBuy ? C.greenBd : C.redBd}`, borderRadius: '14px', padding: '14px 18px', minWidth: '160px', boxShadow: `0 8px 32px ${isBuy ? 'rgba(46,189,133,0.1)' : 'rgba(246,70,93,0.08)'}` }}>
           <div style={{ fontSize: '9px', color: C.dimText, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '7px' }}>Señal IA</div>
           <div style={{ fontSize: '15px', fontWeight: 700, color: isBuy ? C.green : C.red, marginBottom: '12px', letterSpacing: '-0.3px' }}>{insight.signal}</div>
           <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden', marginBottom: '7px' }}>
             <div style={{ height: '100%', width: `${confidence}%`, borderRadius: '2px', transition: 'width 1s ease', background: isBuy ? `linear-gradient(90deg,${C.green},#7eedc0)` : `linear-gradient(90deg,${C.red},#ff9aaa)` }} />
           </div>
-          <div style={{ fontSize: '9px', color: C.dimText }}>{confidence}% confianza</div>
+          <div style={{ fontSize: '9px', color: C.dimText, marginBottom: '8px' }}>{confidence}% confianza</div>
+          {showAI && (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {insight.entry_price > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                  <span style={{ color: C.dimText }}>Entrada</span>
+                  <span style={{ color: C.green, fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(insight.entry_price)}</span>
+                </div>
+              )}
+              {insight.target_price > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                  <span style={{ color: C.dimText }}>Objetivo</span>
+                  <span style={{ color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(insight.target_price)}</span>
+                </div>
+              )}
+              {insight.predicted_next > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                  <span style={{ color: C.dimText }}>LSTM</span>
+                  <span style={{ color: C.blue, fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(insight.predicted_next)}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
