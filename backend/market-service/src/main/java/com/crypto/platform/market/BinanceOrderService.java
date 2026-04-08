@@ -1,6 +1,9 @@
 package com.crypto.platform.market;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import javax.crypto.Mac;
@@ -11,13 +14,14 @@ import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HexFormat;
-import java.util.Map;
 
 @ApplicationScoped
 public class BinanceOrderService {
 
     private static final Logger LOG = Logger.getLogger(BinanceOrderService.class);
     private static final String BASE_URL = "https://api.binance.com";
+
+    @Inject ObjectMapper mapper;
 
     private final HttpClient http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
@@ -58,12 +62,14 @@ public class BinanceOrderService {
                 .build();
 
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            JsonNode body = mapper.readTree(response.body());
 
             if (response.statusCode() == 200 || response.statusCode() == 201) {
                 LOG.infof("Orden Binance ejecutada: %s %s %.2f USDT", side, symbol, quoteQty);
-                return new OrderResult(true, extractField(response.body(), "orderId"), "FILLED", "Orden ejecutada en Binance");
+                String orderId = body.path("orderId").asText("");
+                return new OrderResult(true, orderId, "FILLED", "Orden ejecutada en Binance");
             } else {
-                String msg = extractField(response.body(), "msg");
+                String msg = body.path("msg").asText("Error desconocido");
                 LOG.warnf("Error Binance al ejecutar orden: %s (HTTP %d)", msg, response.statusCode());
                 return new OrderResult(false, null, "REJECTED", "Binance rechazó la orden: " + msg);
             }
@@ -100,25 +106,5 @@ public class BinanceOrderService {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private String extractField(String json, String field) {
-        try {
-            String search = "\"" + field + "\":";
-            int idx = json.indexOf(search);
-            if (idx < 0) return "";
-            int start = idx + search.length();
-            char c = json.charAt(start);
-            if (c == '"') {
-                int end = json.indexOf('"', start + 1);
-                return json.substring(start + 1, end);
-            } else {
-                int end = json.indexOf(',', start);
-                if (end < 0) end = json.indexOf('}', start);
-                return json.substring(start, end).trim();
-            }
-        } catch (Exception e) {
-            return "";
-        }
     }
 }
