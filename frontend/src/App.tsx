@@ -9,13 +9,15 @@ import Settings from './components/Settings'
 import Login from './components/Login'
 import LoadingSplash from './components/LoadingSplash'
 import ErrorBoundary from './components/ErrorBoundary'
+import AgentPanel from './components/AgentPanel'
+import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 
 const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
 
 export default function App() {
   const [loading, setLoading]         = useState(true)
   const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
-  const [activeTab, setActiveTab]     = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]     = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState(() => {
     try {
@@ -45,6 +47,9 @@ export default function App() {
   const pollingErrorCount   = useRef(0)
   const aiCooldownRef  = useRef<Record<string, number>>({})
   const reconnectCount = useRef(0)
+
+  // ─── Agente autónomo ───────────────────────────────────────────────────────
+  const { estado: estadoAgente, activar, pausar, configurarSimbolo, procesarTick } = useAgenteAutonomo()
 
   useEffect(() => { currentSymRef.current = currentSymbol }, [currentSymbol])
 
@@ -92,6 +97,9 @@ export default function App() {
 
       setAiInsights(prev => ({ ...prev, [symbol]: insight }))
 
+      // Llamar al agente autónomo para decidir si operar
+      procesarTick(symbol, price, insight)
+
       if (symbol === currentSymRef.current && insight?.signal?.includes('COMPRAR')) {
         setAlertFlash(true)
         setTimeout(() => setAlertFlash(false), 2000)
@@ -108,7 +116,7 @@ export default function App() {
     } catch (e: any) {
       if (import.meta.env.DEV) console.error(`[AI] ${symbol}:`, e?.message)
     }
-  }, [])
+  }, [procesarTick])
 
   // ─── SSE para precios en tiempo real ────────────────────────────────────────
   useEffect(() => {
@@ -304,6 +312,16 @@ export default function App() {
           {activeTab === 'PORTFOLIO' && (
             <ErrorBoundary fallback="Error en el portfolio">
               <Portfolio user={user} refreshTrigger={portfolioVersion} />
+            </ErrorBoundary>
+          )}
+          {activeTab === 'BOT' && (
+            <ErrorBoundary fallback="Error en el agente autónomo">
+              <AgentPanel
+                estado={estadoAgente}
+                activar={activar}
+                pausar={pausar}
+                configurarSimbolo={configurarSimbolo}
+              />
             </ErrorBoundary>
           )}
           {activeTab === 'CONFIG' && (

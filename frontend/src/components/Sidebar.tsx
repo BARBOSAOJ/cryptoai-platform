@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { LayoutDashboard, Activity, Layers, Settings, LogOut, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, Activity, Layers, Settings, LogOut, TrendingUp, Bot } from 'lucide-react'
 
 const NAV = [
   { tab: 'TRADE',     icon: LayoutDashboard },
   { tab: 'MEMES',     icon: Activity },
   { tab: 'PORTFOLIO', icon: Layers },
+  { tab: 'BOT',       icon: Bot },
   { tab: 'CONFIG',    icon: Settings },
 ] as const
 
-type Tab = 'TRADE' | 'MEMES' | 'PORTFOLIO' | 'CONFIG'
+type Tab = 'TRADE' | 'MEMES' | 'PORTFOLIO' | 'BOT' | 'CONFIG'
 
 interface SidebarProps {
   activeTab: Tab
