@@ -1,4 +1,5 @@
 import { Zap, Shield, Database, Brain, Cpu, CheckCircle, XCircle } from 'lucide-react'
+import BacktestPanel from './BacktestPanel'
 
 interface SettingsProps {
   setRefreshInterval: (v: number) => void
@@ -76,6 +77,8 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
         </div>
 
       </div>
+
+      <BacktestPanel />
     </div>
   )
 }

@@ -1053,6 +1053,9 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     conf = int(min(base_max + mtf_boost, 96))
     conf = min(int(max(conf, abs(combined) * 45 + 50) + mtf_boost), 96)
 
+    # Aplicar calibración isotónica si existe en Redis para este símbolo
+    conf = MotorBacktest.aplicar_calibracion(symbol, conf)
+
     result = {
         "symbol":         symbol,
         "signal":         signal,
@@ -1093,6 +1096,259 @@ async def _precalentar_cache(symbols: list):
 async def startup_pre_warm():
     asyncio.create_task(_precalentar_cache(WARM_SYMBOLS))
     asyncio.create_task(_ciclo_reentrenamiento_automatico())
+
+
+# ─── Motor de Backtesting ─────────────────────────────────────────────────────
+
+class MotorBacktest:
+    """
+    Calibra la confianza del modelo contra precisión histórica real.
+
+    Flujo:
+      1. Descarga 6 meses de velas 1h de Binance (paginada).
+      2. Ventana deslizante de 60 velas cada 6h → simula la señal técnica.
+      3. Verifica si acertó 24 velas después.
+      4. Aplica regresión isotónica para calibrar las probabilidades.
+      5. Guarda curva y mapa en Redis (TTL 24h).
+    """
+
+    CALIBRACION_TTL = 3600 * 24   # 24 horas
+    HORIZONTE       = 24           # velas 1h a futuro para verificar
+    STEP            = 6            # velas entre simulaciones (cada 6h)
+    MESES           = 6
+
+    def __init__(self):
+        self._estados: dict        = {}   # symbol → estado
+        self._lock                 = threading.Lock()
+        self._executor             = ThreadPoolExecutor(max_workers=2)
+
+    # ── Descarga paginada ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _descargar_historial(symbol: str, meses: int = 6) -> list:
+        end_ms   = int(time.time() * 1000)
+        start_ms = end_ms - meses * 30 * 24 * 3600 * 1000
+        all_rows = []
+        cur      = start_ms
+        while cur < end_ms:
+            url = (f"https://api.binance.com/api/v3/klines"
+                   f"?symbol={symbol}&interval=1h&limit=1000"
+                   f"&startTime={cur}&endTime={end_ms}")
+            try:
+                resp = requests.get(url, timeout=15)
+                if resp.status_code != 200:
+                    break
+                rows = resp.json()
+                if not rows:
+                    break
+                all_rows.extend(rows)
+                cur = int(rows[-1][6]) + 1   # close_time del último + 1ms
+                if len(rows) < 1000:
+                    break
+                time.sleep(0.15)
+            except Exception as e:
+                logger.warning(f"Backtest descarga {symbol}: {e}")
+                break
+        return all_rows
+
+    # ── Señal técnica (misma lógica que realizar_analisis, sin LSTM/news) ─────
+
+    @staticmethod
+    def _senal_tecnica(df_win: 'pd.DataFrame', precio: float) -> tuple:
+        """Devuelve (pred_dir, raw_conf) con pred_dir en {-1, 0, 1}."""
+        try:
+            rsi_val   = float(df_win['RSI'].iloc[-1])
+            stoch_rsi = float(IndicadoresTecnicos.stoch_rsi(df_win).iloc[-1])
+            macd_s    = df_win['MACD'].ewm(span=9, adjust=False).mean()
+            macd_hist = float((df_win['MACD'] - macd_s).iloc[-1])
+            ema_cross = IndicadoresTecnicos.ema_cross(df_win)
+            bb_up, bb_lo = IndicadoresTecnicos.bollinger(df_win)
+            bb_pos    = IndicadoresTecnicos.bollinger_position(precio, bb_up, bb_lo)
+            atr_val   = IndicadoresTecnicos.atr(df_win)
+
+            regimen = DetectorRegimen.detectar(df_win, atr_val)
+            pesos   = regimen["pesos"]
+            reg_nom = regimen["regimen"]
+
+            sig = 0.0
+            if rsi_val < 30:         sig += 0.25 * pesos["rsi"]
+            elif rsi_val > 70:       sig -= 0.25 * pesos["rsi"]
+            if stoch_rsi < 0.20:     sig += 0.15 * pesos["stoch_rsi"]
+            elif stoch_rsi > 0.80:   sig -= 0.15 * pesos["stoch_rsi"]
+            if macd_hist > 0:        sig += 0.18 * pesos["macd"]
+            elif macd_hist < 0:      sig -= 0.18 * pesos["macd"]
+            if ema_cross > 0:        sig += 0.15 * pesos["ema_cross"]
+            elif ema_cross < 0:      sig -= 0.15 * pesos["ema_cross"]
+            if bb_pos < -0.5:        sig += 0.12 * pesos["bollinger"]
+            elif bb_pos > 0.5:       sig -= 0.12 * pesos["bollinger"]
+
+            pred_dir = 1 if sig > 0.08 else (-1 if sig < -0.08 else 0)
+
+            base_max = 74
+            if reg_nom == "TRENDING":    base_max = min(base_max + 5, 91)
+            elif reg_nom == "VOLATILE":  base_max = max(base_max - 10, 52)
+            elif reg_nom == "TRANSITION": base_max = max(base_max - 5, 57)
+            raw_conf = min(int(max(base_max, abs(sig) * 45 + 50)), 96)
+
+            return pred_dir, raw_conf
+        except Exception:
+            return 0, 60
+
+    # ── Ejecución en hilo ─────────────────────────────────────────────────────
+
+    def _ejecutar(self, symbol: str):
+        with self._lock:
+            self._estados[symbol] = {"estado": "ejecutando", "inicio": datetime.utcnow().isoformat() + "Z"}
+
+        try:
+            rows = self._descargar_historial(symbol, self.MESES)
+            if len(rows) < 200:
+                raise ValueError(f"Datos insuficientes: {len(rows)} velas")
+
+            df_full = pd.DataFrame(rows, columns=[
+                'ts','open','high','low','close','vol',
+                'close_ts','quote_vol','trades','taker_base','taker_quote','ignore'
+            ])
+            df_full['Close']  = df_full['close'].astype(float)
+            df_full['Volume'] = df_full['vol'].astype(float)
+            df_full['High']   = df_full['high'].astype(float)
+            df_full['Low']    = df_full['low'].astype(float)
+            df_full['RSI']    = IndicadoresTecnicos.rsi(df_full)
+            df_full['MACD'], _ = IndicadoresTecnicos.macd(df_full)
+            df_full.bfill(inplace=True)
+            df_full.fillna(0, inplace=True)
+
+            n = len(df_full)
+            SEQ = 60
+            raw_confs, correct_labels, signals_list = [], [], []
+
+            for i in range(SEQ, n - self.HORIZONTE, self.STEP):
+                df_win     = df_full.iloc[i - SEQ:i].copy()
+                precio_now = float(df_win['Close'].iloc[-1])
+                precio_fut = float(df_full['Close'].iloc[i + self.HORIZONTE - 1])
+
+                pred_dir, raw_conf = self._senal_tecnica(df_win, precio_now)
+                cambio = (precio_fut - precio_now) / (precio_now + 1e-9)
+
+                if pred_dir == 1:    correct = 1 if cambio >  0.005 else 0
+                elif pred_dir == -1: correct = 1 if cambio < -0.005 else 0
+                else:                correct = 1 if abs(cambio) < 0.02 else 0
+
+                raw_confs.append(raw_conf)
+                correct_labels.append(correct)
+                signals_list.append(pred_dir)
+
+            if len(raw_confs) < 30:
+                raise ValueError(f"Muestras insuficientes para calibrar: {len(raw_confs)}")
+
+            # ── Métricas globales ──────────────────────────────────────────────
+            total    = len(correct_labels)
+            accuracy = round(sum(correct_labels) / total, 4)
+
+            buys  = [(c, l) for c, l, s in zip(raw_confs, correct_labels, signals_list) if s ==  1]
+            sells = [(c, l) for c, l, s in zip(raw_confs, correct_labels, signals_list) if s == -1]
+            tp = sum(1 for _, l in buys  if l == 1)
+            fp = sum(1 for _, l in buys  if l == 0)
+            fn = sum(1 for _, l in sells if l == 0)
+            precision = round(tp / (tp + fp + 1e-9), 4)
+            recall    = round(tp / (tp + fn + 1e-9), 4)
+
+            buy_returns = [0.01 if l == 1 else -0.01 for _, l in buys]
+            if buy_returns:
+                r_arr  = np.array(buy_returns)
+                sharpe = float(r_arr.mean() / (r_arr.std() + 1e-9) * np.sqrt(252))
+            else:
+                sharpe = 0.0
+
+            # ── Calibración isotónica ──────────────────────────────────────────
+            from sklearn.isotonic import IsotonicRegression
+            X_cal = np.array(raw_confs, dtype=float) / 100.0
+            y_cal = np.array(correct_labels, dtype=float)
+            iso   = IsotonicRegression(out_of_bounds='clip')
+            iso.fit(X_cal, y_cal)
+
+            # Mapa de calibración: raw conf → calibrado (0-100)
+            calibration_map = {
+                str(c): round(float(iso.predict([c / 100.0])[0]) * 100, 1)
+                for c in range(50, 97)
+            }
+
+            # Curva por buckets de 10 puntos
+            buckets: dict = {}
+            for conf, correct in zip(raw_confs, correct_labels):
+                bkt = (conf // 10) * 10
+                if bkt not in buckets:
+                    buckets[bkt] = {"total": 0, "correct": 0}
+                buckets[bkt]["total"]   += 1
+                buckets[bkt]["correct"] += correct
+
+            calibration_curve = {
+                bkt: {
+                    "predicha": bkt,
+                    "real": round(d["correct"] / d["total"] * 100, 1),
+                    "muestras": d["total"],
+                }
+                for bkt, d in sorted(buckets.items())
+            }
+
+            resultado = {
+                "symbol":            symbol,
+                "muestras":          total,
+                "accuracy":          accuracy,
+                "precision":         precision,
+                "recall":            recall,
+                "sharpe_simulado":   round(sharpe, 3),
+                "calibration_curve": calibration_curve,
+                "timestamp":         datetime.utcnow().isoformat() + "Z",
+            }
+
+            if redis_client:
+                try:
+                    redis_client.setex(f"backtest:{symbol}",     self.CALIBRACION_TTL, json.dumps(resultado))
+                    redis_client.setex(f"calibration:{symbol}", self.CALIBRACION_TTL, json.dumps(calibration_map))
+                except Exception as e:
+                    logger.warning(f"Redis backtest {symbol}: {e}")
+
+            with self._lock:
+                self._estados[symbol] = {"estado": "completado", "resultado": resultado}
+            logger.info(f"Backtest {symbol} completado — accuracy={accuracy:.1%} muestras={total}")
+
+        except Exception as e:
+            logger.error(f"Error backtest {symbol}: {e}")
+            with self._lock:
+                self._estados[symbol] = {"estado": "error", "error": str(e)}
+
+    # ── API pública ───────────────────────────────────────────────────────────
+
+    def lanzar(self, symbol: str) -> bool:
+        with self._lock:
+            estado = self._estados.get(symbol, {}).get("estado")
+        if estado == "ejecutando":
+            return False
+        self._executor.submit(self._ejecutar, symbol)
+        return True
+
+    def estado(self, symbol: str) -> dict:
+        with self._lock:
+            return self._estados.get(symbol, {"estado": "no_iniciado"})
+
+    @staticmethod
+    def aplicar_calibracion(symbol: str, raw_conf: int) -> int:
+        """Aplica la calibración isotónica guardada en Redis. Devuelve raw_conf si no hay datos."""
+        if not redis_client:
+            return raw_conf
+        try:
+            cal_json = redis_client.get(f"calibration:{symbol}")
+            if not cal_json:
+                return raw_conf
+            cal_map = json.loads(cal_json)
+            calibrado = cal_map.get(str(raw_conf))
+            return int(round(float(calibrado))) if calibrado is not None else raw_conf
+        except Exception:
+            return raw_conf
+
+
+motor_backtest = MotorBacktest()
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -1241,6 +1497,42 @@ async def get_multi_timeframe(symbol: str):
         return mtf
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/backtest/{symbol}")
+async def backtest_lanzar(symbol: str):
+    """Lanza el backtesting histórico en segundo plano para un símbolo."""
+    symbol = symbol.upper().strip()
+    ok = motor_backtest.lanzar(symbol)
+    if not ok:
+        raise HTTPException(status_code=409, detail=f"Backtest ya en curso para {symbol}")
+    return {"mensaje": f"Backtest iniciado para {symbol}", "symbol": symbol}
+
+@app.get("/backtest/{symbol}")
+async def backtest_resultado(symbol: str):
+    """
+    Devuelve métricas de backtesting.
+    Orden de prioridad: estado en memoria → Redis → 404.
+    """
+    symbol = symbol.upper().strip()
+    estado = motor_backtest.estado(symbol)
+
+    if estado.get("estado") == "ejecutando":
+        return {"symbol": symbol, "estado": "ejecutando"}
+    if estado.get("estado") == "error":
+        raise HTTPException(status_code=500, detail=estado.get("error", "Error desconocido"))
+    if estado.get("estado") == "completado":
+        return estado["resultado"]
+
+    # Buscar en Redis (backtest anterior a este proceso)
+    if redis_client:
+        try:
+            cached = redis_client.get(f"backtest:{symbol}")
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=404, detail=f"Sin datos de backtest para {symbol}. Lanza POST /backtest/{symbol}")
 
 @app.get("/health")
 async def health():
