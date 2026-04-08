@@ -15,7 +15,7 @@ import java.util.Map;
 @Path("/user")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed("USER")
+@RolesAllowed({"USER", "ADMIN"})
 public class UserSettingsResource {
 
     private static final Logger LOG = Logger.getLogger(UserSettingsResource.class);
