@@ -20,7 +20,12 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
   const [showConfirm, setShowConfirm] = useState(false)
 
   const isBuy      = insight?.signal?.includes('COMPRAR') || insight?.signal?.includes('BUY')
-  const confidence = parseInt(insight?.confidence || '50')
+  const confidence = (() => {
+    const raw = insight?.confidence
+    if (raw === undefined || raw === null) return 50
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace('%', ''), 10)
+    return isNaN(n) ? 50 : Math.max(0, Math.min(100, n))
+  })()
   const lstmActive = insight?.lstm_active ?? false
   const toggle = (k: keyof typeof expanded) => setExpanded(p => ({ ...p, [k]: !p[k] }))
 
