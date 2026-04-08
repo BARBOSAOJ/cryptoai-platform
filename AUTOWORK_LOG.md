@@ -1,5 +1,38 @@
 # AUTOWORK LOG — crypto-ai-platform
 
+## Issue #22 — Gestión de riesgo funcional con ATR, stop-loss automático y ratio R/B
+**Fecha:** 2026-04-08
+**Commits:** 455fc44, d8c3b85, 9593651
+
+### Lo que se implementó
+
+#### AI engine — `GET /risk/{symbol}?price=X&saldo=Y` (`ai-engine/main.py`)
+- Descarga 100 velas 1h de Binance con OHLCV completo para el símbolo.
+- Calcula ATR real (14 periodos) usando `IndicadoresTecnicos.atr`.
+- Detecta régimen de mercado con `DetectorRegimen.detectar`.
+- Devuelve: `symbol, price, stop_loss (price − 2×ATR), take_profit (price + 3×ATR), atr, tamano_posicion (saldo×0.01/ATR), importe_riesgo (saldo×0.01), ratio_rb (1.5), regimen`.
+- Fallback para ATR=0: usa 0.5% del precio. Validación de price>0 y saldo>0.
+
+#### market-service — `RecursoRiesgo.java`
+- `POST /risk/calculate`: recibe `{symbol, saldo, price, stopLoss, entry, riskPercentage}` y calcula `positionSize, riskAmount, rewardAmount (×1.5), ratio`. Reemplaza `RiskResource` (conservada vacía y marcada @Deprecated).
+- `GET /risk/live/{symbol}?price=X&saldo=Y`: llama al AI engine via `java.net.http.HttpClient` y devuelve la respuesta directamente. Gestiona errores de conexión con 503.
+
+#### Frontend — `TradingTerminal.tsx`
+- Botón "Calcular con IA" (icono Zap): llama a `GET http://localhost:8002/risk/{symbol}?price=X&saldo=Y` y rellena automáticamente entry, stop_loss, take_profit y tamaño posición.
+- Muestra ATR actual del símbolo y badge de régimen (verde=TRENDING, rojo=VOLATILE, ámbar=otros).
+- Ratio R/B dinámico ("1 : 1.5") en verde si >= 1.5, ámbar si <1.5.
+- Barra visual del importe en riesgo vs saldo total; barra roja si supera el 5%.
+- Badge "⚠ STOP" en el encabezado de la sección si el precio toca el stop-loss.
+- Input de Take Profit aparece automáticamente cuando se calculan valores IA.
+
+#### Frontend — `useAgenteAutonomo.ts` + `Header.tsx` + `App.tsx`
+- `EstadoAgente` añade campo `alertasStopLoss: Set<string>`.
+- En `procesarTick`: detecta si `precio <= posicion.stopLoss` y añade/elimina el símbolo del Set; limpia la alerta al cerrar posición.
+- `Header.tsx` acepta prop `stopAlertCount: number` y muestra badge rojo animado "STOP ×N" cuando hay posiciones en zona de stop-loss.
+- `App.tsx` pasa `alertasStopLoss.size` a `<Header>`.
+
+---
+
 ## Issue #21 — Agente autónomo de trading impulsado por IA
 **Fecha:** 2026-04-08
 **Commit:** 458b3e5
