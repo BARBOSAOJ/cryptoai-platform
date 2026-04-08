@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { apiClient } from '../api'
-import { ChevronDown, ChevronUp, ShieldCheck, Clock, Target, Play, BarChart3, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { apiClient, aiClient } from '../api'
+import { ChevronDown, ChevronUp, ShieldCheck, Clock, Target, Play, BarChart3, CheckCircle, XCircle, AlertTriangle, Zap } from 'lucide-react'
 import ChartPanel from './ChartPanel'
 
 interface TradingTerminalProps {
@@ -13,11 +13,17 @@ interface TradingTerminalProps {
 
 export default function TradingTerminal({ symbol, insight, history = [], user, onTradeExecuted }: TradingTerminalProps) {
   const [expanded, setExpanded]       = useState({ console: true, log: false, risk: true, auto: true })
-  const [riskParams, setRiskParams]   = useState({ risk: 1, entry: 0, stop: 0 })
+  const [riskParams, setRiskParams]   = useState({ risk: 1, entry: 0, stop: 0, takeProfit: 0 })
   const [calcResult, setCalcResult]   = useState({ size: 0, amount: 0 })
   const [executing, setExecuting]     = useState(false)
   const [execResult, setExecResult]   = useState<{ ok: boolean; msg: string } | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [aiRisk, setAiRisk]           = useState<{
+    atr: number; stop_loss: number; take_profit: number;
+    tamano_posicion: number; importe_riesgo: number; ratio_rb: number; regimen: string
+  } | null>(null)
+  const [aiRiskLoading, setAiRiskLoading] = useState(false)
+  const [stopAlert, setStopAlert]     = useState(false)
 
   const isBuy      = insight?.signal?.includes('COMPRAR') || insight?.signal?.includes('BUY')
   const confidence = (() => {
@@ -34,7 +40,8 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
       try {
         const res = await apiClient.post('/risk/calculate', {
           balance: user.balance, riskPercentage: params.risk,
-          entryPrice: params.entry, stopLoss: params.stop
+          entryPrice: params.entry, stopLoss: params.stop,
+          symbol, saldo: user.balance, price: params.entry
         })
         setCalcResult({ size: res.data.positionSize, amount: res.data.riskAmount })
       } catch { /* error no crítico */ }
@@ -46,6 +53,46 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
     const p = { ...riskParams, [field]: isNaN(num) ? 0 : num }
     setRiskParams(p)
     syncRisk(p)
+    // Alerta de stop-loss: si precio actual <= stop configurado
+    const currentPrice = insight?.entry_price ?? 0
+    if (field === 'stop' && currentPrice > 0 && !isNaN(num) && num > 0) {
+      setStopAlert(currentPrice <= num)
+    }
+  }
+
+  // Botón "Calcular con IA" — llama al AI engine directamente
+  const calcularConIA = async () => {
+    const currentPrice = insight?.entry_price
+      ?? (typeof insight?.price === 'number' ? insight.price : 0)
+    if (currentPrice <= 0) {
+      setExecResult({ ok: false, msg: 'Sin precio disponible. Espera a que cargue el análisis.' })
+      setTimeout(() => setExecResult(null), 3000)
+      return
+    }
+    setAiRiskLoading(true)
+    try {
+      const res = await aiClient.get(`/risk/${symbol}`, {
+        params: { price: currentPrice, saldo: user.balance }
+      })
+      const data = res.data
+      setAiRisk(data)
+      // Rellenar formulario con los valores calculados
+      const nuevosParams = {
+        ...riskParams,
+        entry:      currentPrice,
+        stop:       data.stop_loss,
+        takeProfit: data.take_profit,
+      }
+      setRiskParams(nuevosParams)
+      setCalcResult({ size: data.tamano_posicion, amount: data.importe_riesgo })
+      // Comprobar si el precio ya está en zona de stop
+      setStopAlert(currentPrice <= data.stop_loss)
+    } catch {
+      setExecResult({ ok: false, msg: 'Error al consultar IA de riesgo. Verifica el AI engine.' })
+      setTimeout(() => setExecResult(null), 3000)
+    } finally {
+      setAiRiskLoading(false)
+    }
   }
 
   const initiateOrder = () => {
@@ -190,30 +237,131 @@ export default function TradingTerminal({ symbol, insight, history = [], user, o
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Target size={13} color="#1e3050" strokeWidth={1.75} />
               <span style={sectionTitleStyle}>Gestión de riesgo</span>
+              {stopAlert && (
+                <span style={{
+                  fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
+                  color: '#ff3b3b', background: 'rgba(255,59,59,0.12)',
+                  border: '1px solid rgba(255,59,59,0.3)',
+                  padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.5px'
+                }}>
+                  ⚠ STOP
+                </span>
+              )}
             </div>
             {expanded.risk ? <ChevronUp size={13} color="#1e3050" /> : <ChevronDown size={13} color="#1e3050" />}
           </div>
           {expanded.risk && (
             <div style={{ padding: '0 16px 16px' }}>
+
+              {/* Botón Calcular con IA */}
+              <button
+                onClick={calcularConIA}
+                disabled={aiRiskLoading}
+                style={{
+                  width: '100%', marginBottom: '10px', padding: '8px',
+                  borderRadius: '8px', border: '1px solid rgba(0,208,96,0.2)',
+                  background: 'rgba(0,208,96,0.06)',
+                  color: aiRiskLoading ? '#1e3050' : '#00d060',
+                  fontSize: '11px', fontWeight: 600, cursor: aiRiskLoading ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', gap: '6px', transition: 'all 0.2s'
+                }}
+              >
+                <Zap size={11} />
+                {aiRiskLoading ? 'Calculando...' : 'Calcular con IA'}
+              </button>
+
+              {/* ATR y régimen (si hay datos IA) */}
+              {aiRisk && (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginBottom: '8px', padding: '6px 10px',
+                  background: '#0b1424', borderRadius: '7px', border: '1px solid #111e35'
+                }}>
+                  <span style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+                    ATR: <span style={{ color: '#7890b0' }}>{aiRisk.atr.toFixed(4)}</span>
+                  </span>
+                  <span style={{
+                    fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
+                    padding: '2px 7px', borderRadius: '4px',
+                    color: aiRisk.regimen === 'TRENDING' ? '#00d060' : aiRisk.regimen === 'VOLATILE' ? '#ff3b3b' : '#f59e0b',
+                    background: aiRisk.regimen === 'TRENDING' ? 'rgba(0,208,96,0.07)' : aiRisk.regimen === 'VOLATILE' ? 'rgba(255,59,59,0.07)' : 'rgba(245,158,11,0.07)',
+                    border: `1px solid ${aiRisk.regimen === 'TRENDING' ? 'rgba(0,208,96,0.15)' : aiRisk.regimen === 'VOLATILE' ? 'rgba(255,59,59,0.15)' : 'rgba(245,158,11,0.15)'}`
+                  }}>
+                    {aiRisk.regimen}
+                  </span>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
                 <input
                   type="number" placeholder="Entrada $" min="0" step="any"
+                  value={riskParams.entry > 0 ? riskParams.entry : ''}
                   onChange={e => handleInput('entry', e.target.value)}
                   style={riskInputStyle}
                 />
                 <input
                   type="number" placeholder="Stop loss $" min="0" step="any"
+                  value={riskParams.stop > 0 ? riskParams.stop : ''}
                   onChange={e => handleInput('stop', e.target.value)}
-                  style={riskInputStyle}
+                  style={{ ...riskInputStyle, borderColor: stopAlert ? 'rgba(255,59,59,0.4)' : '#1a1a1a' }}
                 />
               </div>
+              {riskParams.takeProfit > 0 && (
+                <div style={{ marginBottom: '8px', display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                  <input
+                    type="number" placeholder="Take profit $" min="0" step="any"
+                    value={riskParams.takeProfit}
+                    onChange={e => handleInput('takeProfit', e.target.value)}
+                    style={{ ...riskInputStyle, borderColor: 'rgba(0,208,96,0.2)' }}
+                  />
+                </div>
+              )}
+
               <div style={riskResultStyle}>
-                <div style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                  Tamaño recomendado
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                    Tamaño recomendado
+                  </div>
+                  {/* Ratio R/B */}
+                  {aiRisk && (
+                    <div style={{
+                      fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700,
+                      color: aiRisk.ratio_rb >= 1.5 ? '#00d060' : '#f59e0b',
+                      background: aiRisk.ratio_rb >= 1.5 ? 'rgba(0,208,96,0.08)' : 'rgba(245,158,11,0.08)',
+                      border: `1px solid ${aiRisk.ratio_rb >= 1.5 ? 'rgba(0,208,96,0.18)' : 'rgba(245,158,11,0.18)'}`,
+                      padding: '2px 8px', borderRadius: '5px'
+                    }}>
+                      1 : {aiRisk.ratio_rb.toFixed(1)}
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px' }}>
                   {calcResult.size.toFixed(4)}<span style={{ fontSize: '11px', color: '#2c4268', fontWeight: 400, marginLeft: '4px' }}>{symbol.replace('USDT', '')}</span>
                 </div>
+
+                {/* Barra visual importe en riesgo vs saldo */}
+                {calcResult.amount > 0 && (
+                  <div style={{ marginTop: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+                        En riesgo: <span style={{ color: '#7890b0' }}>${calcResult.amount.toFixed(2)}</span>
+                      </span>
+                      <span style={{ fontSize: '9px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+                        {((calcResult.amount / user.balance) * 100).toFixed(1)}% del saldo
+                      </span>
+                    </div>
+                    <div style={{ height: '4px', background: '#111e35', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.min((calcResult.amount / user.balance) * 100, 100)}%`,
+                        background: (calcResult.amount / user.balance) > 0.05
+                          ? '#ff3b3b' : '#00d060',
+                        borderRadius: '2px', transition: '0.5s'
+                      }} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

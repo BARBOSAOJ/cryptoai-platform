@@ -30,6 +30,8 @@ export interface EstadoAgente {
   posicionesAbiertas: Record<string, PosicionAbierta>
   log: EntradaLog[]
   statsHoy: { operaciones: number; pnlBot: number }
+  /** Símbolos cuyo precio está actualmente <= stopLoss */
+  alertasStopLoss: Set<string>
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -72,7 +74,8 @@ export function useAgenteAutonomo() {
     configuracion: cargarConfig(),
     posicionesAbiertas: {},
     log: [],
-    statsHoy: { operaciones: 0, pnlBot: 0 }
+    statsHoy: { operaciones: 0, pnlBot: 0 },
+    alertasStopLoss: new Set<string>()
   }))
 
   // Ref para último timestamp de operación por símbolo (cooldown)
@@ -185,6 +188,32 @@ export function useAgenteAutonomo() {
 
       const posicionAbierta = estado.posicionesAbiertas[symbol]
 
+      // ── Alertas stop-loss en tiempo real ─────────────────────────────────
+      if (posicionAbierta) {
+        const enStopZone = price <= posicionAbierta.stopLoss
+        setEstado(prev => {
+          const alertas = new Set(prev.alertasStopLoss)
+          if (enStopZone) {
+            alertas.add(symbol)
+          } else {
+            alertas.delete(symbol)
+          }
+          // Solo actualizar estado si cambia algo para evitar re-renders innecesarios
+          const prevHas = prev.alertasStopLoss.has(symbol)
+          if (prevHas === enStopZone) return prev
+          return { ...prev, alertasStopLoss: alertas }
+        })
+      } else {
+        // Sin posición abierta: limpiar alerta si existía
+        if (estado.alertasStopLoss.has(symbol)) {
+          setEstado(prev => {
+            const alertas = new Set(prev.alertasStopLoss)
+            alertas.delete(symbol)
+            return { ...prev, alertasStopLoss: alertas }
+          })
+        }
+      }
+
       // ── Decisión VENDER ──────────────────────────────────────────────────
       if (posicionAbierta) {
         const debeVender =
@@ -214,7 +243,9 @@ export function useAgenteAutonomo() {
             setEstado(prev => {
               const nuevasPosiciones = { ...prev.posicionesAbiertas }
               delete nuevasPosiciones[symbol]
-              return { ...prev, posicionesAbiertas: nuevasPosiciones }
+              const alertas = new Set(prev.alertasStopLoss)
+              alertas.delete(symbol)
+              return { ...prev, posicionesAbiertas: nuevasPosiciones, alertasStopLoss: alertas }
             })
             registrarOperacion(pnl)
             agregarLog({
@@ -283,6 +314,7 @@ export function useAgenteAutonomo() {
     activar,
     pausar,
     configurarSimbolo,
-    procesarTick
+    procesarTick,
+    alertasStopLoss: estado.alertasStopLoss
   }
 }

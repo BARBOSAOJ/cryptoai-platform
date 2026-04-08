@@ -49,7 +49,7 @@ export default function App() {
   const reconnectCount = useRef(0)
 
   // ─── Agente autónomo ───────────────────────────────────────────────────────
-  const { estado: estadoAgente, activar, pausar, configurarSimbolo, procesarTick } = useAgenteAutonomo()
+  const { estado: estadoAgente, activar, pausar, configurarSimbolo, procesarTick, alertasStopLoss } = useAgenteAutonomo()
 
   useEffect(() => { currentSymRef.current = currentSymbol }, [currentSymbol])
 
@@ -277,6 +277,7 @@ export default function App() {
           marketData={marketData}
           sseConnected={sseConnected}
           aiHealth={aiHealth}
+          stopAlertCount={alertasStopLoss.size}
         />
         {dataError && (
           <div style={{

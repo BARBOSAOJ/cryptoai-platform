@@ -10,9 +10,11 @@ interface HeaderProps {
   sseConnected?: boolean
   aiHealth?: { lstm: boolean; finbert: boolean } | null
   walletBalance?: number | null
+  /** Número de posiciones con precio <= stopLoss */
+  stopAlertCount?: number
 }
 
-export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth, walletBalance }: HeaderProps) {
+export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth, walletBalance, stopAlertCount = 0 }: HeaderProps) {
   const [searchInput, setSearchInput]     = useState('')
   const [isOpen, setIsOpen]               = useState(false)
   const [saldoCartera, setSaldoCartera]   = useState<number | null>(walletBalance ?? null)
@@ -146,6 +148,25 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
         {aiHealth && !aiHealth.lstm && !aiHealth.finbert && (
           <div title="Modelos IA no disponibles" style={{ display: 'flex', alignItems: 'center' }}>
             <AlertTriangle size={13} color="#f59e0b" strokeWidth={1.75} />
+          </div>
+        )}
+        {/* Badge de alerta de stop-loss */}
+        {stopAlertCount > 0 && (
+          <div
+            title={`${stopAlertCount} posición(es) en zona de stop-loss`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              background: 'rgba(255,59,59,0.1)', border: '1px solid rgba(255,59,59,0.3)',
+              padding: '4px 9px', borderRadius: '7px', animation: 'pulse 1.5s infinite'
+            }}
+          >
+            <AlertTriangle size={11} color="#ff3b3b" strokeWidth={2} />
+            <span style={{
+              fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
+              color: '#ff3b3b', letterSpacing: '0.5px', fontWeight: 700
+            }}>
+              STOP ×{stopAlertCount}
+            </span>
           </div>
         )}
         {/* Badge de saldo de cartera virtual */}
