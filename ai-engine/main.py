@@ -65,6 +65,41 @@ NEWS_CACHE_MAX    = 100
 BINANCE_KLINES    = "https://api.binance.com/api/v3/klines"
 WARM_SYMBOLS      = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "PEPEUSDT", "SHIBUSDT", "TRUMPUSDT"]
 
+# ─── Monitor de fallos ────────────────────────────────────────────────────────
+
+class MonitorFallos:
+    """
+    Registra fallos consecutivos por componente y expone el estado
+    de degradación para que el administrador pueda detectar problemas.
+    """
+    def __init__(self):
+        self._fallos: dict  = {}   # componente → {"count": int, "ultimo": str, "mensaje": str}
+        self._lock = threading.Lock()
+
+    def registrar(self, componente: str, mensaje: str):
+        with self._lock:
+            entrada = self._fallos.get(componente, {"count": 0, "ultimo": None, "mensaje": ""})
+            entrada["count"]   += 1
+            entrada["ultimo"]   = datetime.utcnow().isoformat() + "Z"
+            entrada["mensaje"]  = mensaje
+            self._fallos[componente] = entrada
+        logger.warning(f"[{componente}] fallo #{entrada['count']}: {mensaje}")
+
+    def limpiar(self, componente: str):
+        with self._lock:
+            self._fallos.pop(componente, None)
+
+    def estado(self) -> dict:
+        with self._lock:
+            return dict(self._fallos)
+
+    def degradado(self) -> bool:
+        with self._lock:
+            return any(v["count"] >= 3 for v in self._fallos.values())
+
+
+monitor_fallos = MonitorFallos()
+
 # ─── Redis ────────────────────────────────────────────────────────────────────
 
 redis_client = None
@@ -80,6 +115,7 @@ try:
 except Exception as e:
     logger.warning(f"Redis no disponible: {e}")
     redis_client = None
+    monitor_fallos.registrar("redis", str(e))
 
 AI_CACHE_TTL = 30
 
@@ -900,8 +936,11 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     if redis_client:
         try:
             cached = redis_client.get(cache_key)
-            if cached: return json.loads(cached)
-        except Exception: pass
+            if cached:
+                monitor_fallos.limpiar("redis")
+                return json.loads(cached)
+        except Exception as e:
+            monitor_fallos.registrar("redis", f"get {cache_key}: {e}")
 
     news_data = obtener_noticias(symbol)
     news_details, avg_sentiment = analizar_titulares(news_data)
@@ -1010,6 +1049,7 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
 
         except Exception as e:
             logger.debug(f"Error análisis técnico {symbol}: {e}")
+            monitor_fallos.registrar("analisis_tecnico", f"{symbol}: {e}")
 
     # ── Multi-timeframe ────────────────────────────────────────────────────────
     mtf = {}
@@ -1537,15 +1577,30 @@ async def backtest_resultado(symbol: str):
 @app.get("/health")
 async def health():
     estado_retrain = gestor_reentrenamiento.estado_actual()
+    fallos         = monitor_fallos.estado()
+    degradado      = monitor_fallos.degradado()
+
+    # Probar conexión Redis en tiempo real
+    redis_ok = False
+    if redis_client:
+        try:
+            redis_client.ping()
+            redis_ok = True
+            monitor_fallos.limpiar("redis")
+        except Exception as e:
+            monitor_fallos.registrar("redis", f"ping: {e}")
+
     return {
-        "status":               "ok",
-        "redis":                redis_client is not None,
-        "lstm":                 lstm_model is not None,
-        "finbert":              sentiment_model is not None,
-        "news_api":             bool(CRYPTO_PANIC_KEY),
-        "news_cache":           len(NEWS_CACHE),
-        "models_ready":         lstm_model is not None or sentiment_model is not None,
-        "reentrenamiento":      estado_retrain,
+        "status":          "degradado" if degradado else "ok",
+        "redis":           redis_ok,
+        "lstm":            lstm_model is not None,
+        "finbert":         sentiment_model is not None,
+        "news_api":        bool(CRYPTO_PANIC_KEY),
+        "news_cache":      len(NEWS_CACHE),
+        "models_ready":    lstm_model is not None or sentiment_model is not None,
+        "reentrenamiento": estado_retrain,
+        "fallos":          fallos,
+        "degradado":       degradado,
     }
 
 if __name__ == "__main__":
