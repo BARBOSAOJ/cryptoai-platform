@@ -1454,6 +1454,8 @@ async def get_candles(symbol: str, interval: str = "1m", limit: int = 200):
 @app.get("/news")
 async def get_news(symbols: str = "BTC,ETH,SOL,DOGE,PEPE", limit: int = 20):
     """Feed de noticias multi-símbolo con análisis de sentimiento."""
+    if len(symbols) > 200:
+        raise HTTPException(status_code=400, detail="Parámetro symbols demasiado largo (máx 200 caracteres)")
     symbol_list = [s.strip().upper() for s in symbols.split(",")]
     all_news = []
     seen_titles = set()
