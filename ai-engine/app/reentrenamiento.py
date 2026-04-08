@@ -14,10 +14,10 @@ from app.config import logger, _has_ml, BINANCE_KLINES
 
 
 class GestorReentrenamiento:
-    RUTA_MODELO   = 'models/crypto_lstm_model_v2.h5'
-    RUTA_SCALER   = 'models/scaler_v2.gz'
+    RUTA_MODELO   = 'models/crypto_lstm_model_v3.h5'
+    RUTA_SCALER   = 'models/scaler_v3.gz'
     SEQ_LEN       = 60
-    FEATURES      = ['Close', 'Volume', 'RSI', 'MACD']
+    FEATURES      = ['Close', 'Volume', 'RSI', 'MACD', 'StochRSI', 'EMA_cross', 'BB_pos', 'OBV_norm', 'Momentum']
     INTERVALO_H   = 24
     SIMBOLOS_FIJOS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'BNBUSDT', 'XRPUSDT']
 
@@ -88,6 +88,23 @@ class GestorReentrenamiento:
             df['Volume'] = df['vol'].astype(float)
             df['RSI']    = IndicadoresTecnicos.rsi(df)
             df['MACD'], _ = IndicadoresTecnicos.macd(df)
+            df['StochRSI'] = IndicadoresTecnicos.stoch_rsi(df)
+            # EMA cross: (EMA9 - EMA21) / EMA21 × 100, clipado a [-10, 10]
+            ema9  = df['Close'].ewm(span=9,  adjust=False).mean()
+            ema21 = df['Close'].ewm(span=21, adjust=False).mean()
+            df['EMA_cross'] = ((ema9 - ema21) / (ema21 + 1e-9) * 100).clip(-10, 10)
+            # Bollinger position: (Close - lower) / (upper - lower) × 2 - 1
+            sma20 = df['Close'].rolling(20).mean()
+            std20 = df['Close'].rolling(20).std()
+            bb_range = (2 * std20 * 2).replace(0, 1e-9)
+            df['BB_pos'] = ((df['Close'] - (sma20 - 2 * std20)) / bb_range * 2 - 1).clip(-2, 2)
+            # OBV normalizado por máximo rolling 50
+            sign = df['Close'].diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+            obv_raw = (df['Volume'] * sign).cumsum()
+            obv_max = obv_raw.abs().rolling(50, min_periods=1).max().replace(0, 1)
+            df['OBV_norm'] = (obv_raw / obv_max).clip(-1, 1)
+            # Momentum: retorno a 5 períodos
+            df['Momentum'] = df['Close'].pct_change(5).clip(-0.1, 0.1)
             df.bfill(inplace=True); df.fillna(0, inplace=True)
             data_scaled = (scaler_fit.transform(df[self.FEATURES].values)
                            if hasattr(scaler_fit, 'scale_')
@@ -190,7 +207,13 @@ gestor_reentrenamiento = GestorReentrenamiento()
 
 async def _ciclo_reentrenamiento_automatico():
     intervalo_s = GestorReentrenamiento.INTERVALO_H * 3600
-    await asyncio.sleep(intervalo_s)
+    # Reentrenar inmediatamente desde cero si no existe el modelo v3
+    if not os.path.exists(GestorReentrenamiento.RUTA_MODELO):
+        logger.info("Modelo v3 no encontrado — reentrenando desde cero con 9 features")
+        gestor_reentrenamiento.lanzar(desde_cero=True)
+        await asyncio.sleep(intervalo_s)
+    else:
+        await asyncio.sleep(intervalo_s)
     while True:
         logger.info("Reentrenamiento automático — iniciando ciclo periódico")
         gestor_reentrenamiento.lanzar()

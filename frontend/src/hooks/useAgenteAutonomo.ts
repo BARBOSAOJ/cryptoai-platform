@@ -282,8 +282,10 @@ export function useAgenteAutonomo() {
       }
 
       // ── Decisión COMPRAR ─────────────────────────────────────────────────
-      const regVolatil   = regimen.toUpperCase().includes('VOLAT')
       const señalCompra  = signal.includes('COMPRAR') || signal.includes('BUY')
+
+      // Filtro de régimen (issue #32): solo operar en TRENDING, bloquear RANGING/VOLATILE/TRANSITION
+      const regNoFavorable = regimen.length > 0 && !regimen.toUpperCase().includes('TREND')
 
       // Filtro de correlación BTC (issue #27): bloquear altcoins si BTC cae >2%
       const btcFiltroActivo = symbol !== 'BTCUSDT' && btcPriceChange <= BTC_DROP_THRESHOLD
@@ -295,7 +297,7 @@ export function useAgenteAutonomo() {
 
       if (
         señalValida &&
-        !regVolatil &&
+        !regNoFavorable &&
         !btcFiltroActivo &&
         confluencia >= 0.5
       ) {

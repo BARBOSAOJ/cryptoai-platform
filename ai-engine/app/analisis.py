@@ -49,6 +49,19 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
             df['RSI']  = IndicadoresTecnicos.rsi(df)
             df['MACD'], macd_sig = IndicadoresTecnicos.macd(df)
             bb_upper, bb_lower  = IndicadoresTecnicos.bollinger(df)
+            df['StochRSI'] = IndicadoresTecnicos.stoch_rsi(df)
+            ema9_s  = df['Close'].ewm(span=9,  adjust=False).mean()
+            ema21_s = df['Close'].ewm(span=21, adjust=False).mean()
+            df['EMA_cross'] = ((ema9_s - ema21_s) / (ema21_s + 1e-9) * 100).clip(-10, 10)
+            sma20   = df['Close'].rolling(20).mean()
+            std20   = df['Close'].rolling(20).std()
+            bb_rng  = (std20 * 4).replace(0, 1e-9)
+            df['BB_pos'] = ((df['Close'] - (sma20 - 2 * std20)) / bb_rng * 2 - 1).clip(-2, 2)
+            sign_s  = df['Close'].diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+            obv_raw = (df['Volume'] * sign_s).cumsum()
+            obv_mx  = obv_raw.abs().rolling(50, min_periods=1).max().replace(0, 1)
+            df['OBV_norm'] = (obv_raw / obv_mx).clip(-1, 1)
+            df['Momentum'] = df['Close'].pct_change(5).clip(-0.1, 0.1)
             df.bfill(inplace=True); df.fillna(0, inplace=True)
 
             rsi_val    = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
@@ -99,10 +112,16 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
                 tech_signal *= 1.25
 
             if modelos.lstm_model and modelos.scaler and len(history) >= 60:
-                data_matrix = df[['Close', 'Volume', 'RSI', 'MACD']].values[-60:]
+                _features_v3 = ['Close', 'Volume', 'RSI', 'MACD', 'StochRSI', 'EMA_cross', 'BB_pos', 'OBV_norm', 'Momentum']
+                # Verificar que el modelo espera el número correcto de features
+                expected_n = modelos.lstm_model.input_shape[-1] if hasattr(modelos.lstm_model, 'input_shape') else len(_features_v3)
+                if expected_n != len(_features_v3):
+                    logger.warning(f"Modelo con {expected_n} features, se esperan {len(_features_v3)} — saltando LSTM hasta reentrenamiento")
+                    modelos.lstm_model = None  # forzar uso de sólo técnicos hasta que se reentrene
+                data_matrix = df[_features_v3].values[-60:]
                 scaled_data = modelos.scaler.transform(data_matrix)
                 pred        = modelos.lstm_model.predict(np.array([scaled_data]), verbose=0)
-                dummy       = np.zeros((1, 4))
+                dummy       = np.zeros((1, len(_features_v3)))
                 dummy[0, 0] = pred[0][0]
                 p_val          = float(modelos.scaler.inverse_transform(dummy)[0][0])
                 predicted_next = round(p_val, 2)
@@ -145,9 +164,40 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     else:
         combined = avg_sentiment
 
+    # ── Puerta de multi-confirmación (issue #30) ──────────────────────────────
+    # Solo COMPRAR si ≥4 indicadores técnicos apuntan alcistas simultáneamente
+    confirmaciones_alcistas = 0
+    if indicators:
+        if indicators.get("rsi", 50) < 35:             confirmaciones_alcistas += 1
+        if indicators.get("stoch_rsi", 0.5) < 0.25:   confirmaciones_alcistas += 1
+        if indicators.get("macd_histogram", 0) > 0:    confirmaciones_alcistas += 1
+        if indicators.get("ema_cross", 0) > 0:         confirmaciones_alcistas += 1
+        if indicators.get("bb_position", 0) < -0.3:    confirmaciones_alcistas += 1
+        if indicators.get("obv_delta", 0) > 0.05:      confirmaciones_alcistas += 1
+        if lstm_active and predicted_next > price:      confirmaciones_alcistas += 1
+
+    confirmaciones_bajistas = 0
+    if indicators:
+        if indicators.get("rsi", 50) > 65:             confirmaciones_bajistas += 1
+        if indicators.get("stoch_rsi", 0.5) > 0.75:   confirmaciones_bajistas += 1
+        if indicators.get("macd_histogram", 0) < 0:    confirmaciones_bajistas += 1
+        if indicators.get("ema_cross", 0) < 0:         confirmaciones_bajistas += 1
+        if indicators.get("bb_position", 0) > 0.3:     confirmaciones_bajistas += 1
+        if indicators.get("obv_delta", 0) < -0.05:     confirmaciones_bajistas += 1
+        if lstm_active and predicted_next < price:      confirmaciones_bajistas += 1
+
+    umbral_confirmaciones = 4
+    señal_compra_valida = combined > 0.10 and confirmaciones_alcistas >= umbral_confirmaciones
+    señal_venta_valida  = combined < -0.10 and confirmaciones_bajistas >= umbral_confirmaciones
+
     signal = "MANTENER ⚖️"
-    if combined > 0.10:    signal = "COMPRAR 🚀"
-    elif combined < -0.10: signal = "VENDER 📉"
+    if señal_compra_valida:  signal = "COMPRAR 🚀"
+    elif señal_venta_valida: signal = "VENDER 📉"
+
+    # ── Filtro de régimen (issue #32) ─────────────────────────────────────────
+    # Solo emitir COMPRAR en régimen TRENDING; en otros regímenes la señal es ruido
+    if signal == "COMPRAR 🚀" and regimen_actual not in ("TRENDING",):
+        signal = "MANTENER ⚖️"
 
     regimen_actual = indicators.get("regimen", "RANGING")
     base_max = 85 if lstm_active else 74 if indicators else 62
@@ -196,6 +246,9 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
         regime_component * w_regime
     ) / w_total
     conviction_score = max(0, min(100, int(round((raw_conv + 1.0) * 50))))
+    # Penalizar convicción si el régimen no es favorable para comprar
+    if regimen_actual not in ("TRENDING",) and conviction_score > 49:
+        conviction_score = min(conviction_score, 49)
 
     result = {
         "symbol":           symbol,
