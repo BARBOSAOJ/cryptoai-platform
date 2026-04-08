@@ -30,6 +30,7 @@ public class OrderResource {
     @Inject ObjectMapper mapper;
     @Inject BinanceOrderService binanceOrderService;
     @Inject @RestClient UserSettingsClient userSettingsClient;
+    @Inject ServicioCartera servicioCartera;
 
     @Inject
     @Channel("orders")
@@ -79,13 +80,28 @@ public class OrderResource {
             return Response.status(401).entity(Map.of("error", "Token inválido")).build();
         }
 
+        String side   = order.type != null ? order.type.toUpperCase() : "BUY";
+        double importe = order.size * order.price;
+
+        // Validar y actualizar saldo de la cartera virtual
+        if ("BUY".equals(side)) {
+            boolean saldoOk = servicioCartera.descontarSaldo(userId, importe);
+            if (!saldoOk) {
+                return Response.status(402).entity(Map.of(
+                    "error", "Saldo insuficiente en la cartera virtual. Deposita fondos antes de operar."
+                )).build();
+            }
+        } else if ("SELL".equals(side)) {
+            servicioCartera.añadirSaldo(userId, importe);
+        }
+
         Trade trade = new Trade();
         trade.userId     = userId;
         trade.symbol     = order.symbol.toUpperCase().trim();
-        trade.side       = order.type != null ? order.type.toUpperCase() : "BUY";
+        trade.side       = side;
         trade.quantity   = order.size;
         trade.entryPrice = order.price;
-        trade.total      = order.size * order.price;
+        trade.total      = importe;
         trade.signal     = order.signal;
         trade.confidence = order.confidence;
         trade.timestamp  = Instant.now();
