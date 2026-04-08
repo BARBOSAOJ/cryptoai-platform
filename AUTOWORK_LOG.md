@@ -1,5 +1,28 @@
 # AUTOWORK LOG — crypto-ai-platform
 
+## Issue #23 — Panel de posiciones activas en tiempo real y estadísticas de perfil
+**Fecha:** 2026-04-08
+**Commits:** ebc3057, caa659e
+
+### Lo que se implementó
+
+#### market-service — `OrderResource.java`
+- `GET /portfolio/stats` ampliado con: `mejorTrade` (max PnL por operación), `peorTrade` (min PnL), `rachaGanadora` (max wins consecutivos), `diasActivo` (días distintos con trades).
+
+#### market-service — `RecursoEstadisticas.java` (nuevo)
+- `GET /portfolio/equity-curve`: agrupa trades por día UTC, calcula saldo acumulado neto partiendo de 10 000 USDT. Devuelve array `[{fecha, valor}]`.
+
+#### Frontend — `Portfolio.tsx` (reescrito)
+- Sistema de **3 tabs** interno: Resumen | Posiciones | Estadísticas.
+- **Tab Resumen**: igual que antes, con tabla compacta de posiciones abiertas.
+- **Tab Posiciones**: tabla detallada con columnas Precio entrada, Precio actual, P&L $, P&L %, Valor total, Acción. P&L recalculado en tiempo real con el prop `marketData` (SSE). Filas coloreadas verde/rojo. Botón "Cerrar" por fila (POST /portfolio/execute SELL). Ordenado por valor descendente.
+- **Tab Estadísticas**: métricas mejorTrade/peorTrade/rachaGanadora/diasActivo; curva de equity con SVG inline (área + línea + puntos + ejes); comparativa portfolio vs BTC usando `marketData['BTCUSDT'].history`; botón "Exportar CSV" que descarga historial de trades.
+
+#### Frontend — `App.tsx`
+- Pasa `marketData={marketData}` al componente `<Portfolio>`.
+
+---
+
 ## Issue #22 — Gestión de riesgo funcional con ATR, stop-loss automático y ratio R/B
 **Fecha:** 2026-04-08
 **Commits:** 455fc44, d8c3b85, 9593651
