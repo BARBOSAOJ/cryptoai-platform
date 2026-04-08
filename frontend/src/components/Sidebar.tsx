@@ -17,8 +17,22 @@ interface SidebarProps {
   onLogout: () => void
 }
 
+function obtenerRolDesdeToken(): string {
+  const token = localStorage.getItem('token')
+  if (!token) return 'USER'
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    const groups: string[] = payload.groups || []
+    return groups.includes('ADMIN') ? 'ADMIN' : 'USER'
+  } catch {
+    return 'USER'
+  }
+}
+
 export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarProps) {
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const rol = obtenerRolDesdeToken()
+  const esAdmin = rol === 'ADMIN'
 
   const handleLogoutClick = () => {
     if (confirmLogout) {
@@ -41,6 +55,24 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarPr
           </div>
         ))}
       </div>
+
+      {/* Badge de rol */}
+      <div style={{
+        width: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: '2px', marginBottom: '8px'
+      }}>
+        <span style={{
+          fontSize: '8px', fontFamily: 'JetBrains Mono, monospace',
+          color: esAdmin ? '#818cf8' : '#00d060',
+          background: esAdmin ? 'rgba(129,140,248,0.12)' : 'rgba(0,208,96,0.08)',
+          border: `1px solid ${esAdmin ? 'rgba(129,140,248,0.3)' : 'rgba(0,208,96,0.2)'}`,
+          padding: '2px 4px', borderRadius: '4px', letterSpacing: '0.5px',
+          textAlign: 'center', width: '100%'
+        }}>
+          {esAdmin ? 'ADMIN' : 'USER'}
+        </span>
+      </div>
+
       <button
         onClick={handleLogoutClick}
         style={{ ...logoutStyle, opacity: confirmLogout ? 1 : 0.5 }}
