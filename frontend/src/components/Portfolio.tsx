@@ -82,7 +82,17 @@ export default function Portfolio({ user, refreshTrigger = 0 }: PortfolioProps) 
         </div>
       )}
 
-      <div style={statsGridStyle}>
+      {/* Skeleton durante carga inicial (sin datos previos) */}
+      {loading && !stats && !error && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{ height: '72px', background: '#091220', border: '1px solid #111e35', borderRadius: '12px', animation: 'pulse 1.4s ease-in-out infinite', opacity: 0.7 }} />
+          ))}
+          <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
+        </div>
+      )}
+
+      <div style={{ ...statsGridStyle, opacity: loading && stats ? 0.5 : 1, transition: 'opacity 0.2s' }}>
         <div style={statCardStyle}>
           <div style={statLabelStyle}>Patrimonio total</div>
           <div style={statValueStyle}>${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
