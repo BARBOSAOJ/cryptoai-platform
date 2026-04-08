@@ -35,6 +35,20 @@ public class OrderResource {
     @Channel("orders")
     Emitter<String> ordersEmitter;
 
+    // ─── Extracción de userId desde JWT ──────────────────────────────────────
+
+    /**
+     * El token se genera con .upn(user.email) y .claim("id", user.id).
+     * Usamos el claim "id" (clave primaria de BD) como userId canónico.
+     * Fallback a upn (email) si "id" no está presente.
+     */
+    private String extractUserId() {
+        Object idClaim = jwt.getClaim("id");
+        if (idClaim != null) return String.valueOf(idClaim);
+        String upn = jwt.getName();   // upn → getName() en MicroProfile JWT
+        return (upn != null && !upn.isBlank()) ? upn : null;
+    }
+
     // ─── DTOs ────────────────────────────────────────────────────────────────
 
     public static class OrderRequest {
@@ -60,9 +74,8 @@ public class OrderResource {
             return Response.status(400).entity(Map.of("error", "El tamaño y precio deben ser mayores que 0")).build();
         }
 
-        // Usar 'sub' (subject) del JWT para el userId, más fiable que 'name'
-        String userId = jwt.getSubject() != null ? jwt.getSubject() : jwt.getName();
-        if (userId == null || userId.isBlank()) {
+        String userId = extractUserId();
+        if (userId == null) {
             return Response.status(401).entity(Map.of("error", "Token inválido")).build();
         }
 
@@ -112,7 +125,7 @@ public class OrderResource {
     public List<Trade> getMyTrades(
             @QueryParam("limit")  @DefaultValue("50")  int limit,
             @QueryParam("offset") @DefaultValue("0")   int offset) {
-        String userId = jwt.getSubject() != null ? jwt.getSubject() : jwt.getName();
+        String userId = extractUserId();
         int safeLimit = Math.min(Math.max(limit, 1), MAX_TRADE_LIMIT);
         int safeOffset = Math.max(offset, 0);
         return Trade.findByUserIdPaged(userId, safeLimit, safeOffset);
@@ -142,7 +155,7 @@ public class OrderResource {
             return Response.status(400).entity(Map.of("error", "La cantidad mínima es 5 USDT")).build();
         }
 
-        String userId = jwt.getSubject() != null ? jwt.getSubject() : jwt.getName();
+        String userId = extractUserId();
         String authHeader = headers.getHeaderString("Authorization");
 
         // Obtener settings del usuario desde user-service
@@ -221,7 +234,7 @@ public class OrderResource {
     @Path("/stats")
     @RolesAllowed("USER")
     public Map<String, Object> getStats() {
-        String userId = jwt.getSubject() != null ? jwt.getSubject() : jwt.getName();
+        String userId = extractUserId();
         List<Trade> trades = Trade.findByUserId(userId);
 
         if (trades.isEmpty()) {
