@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { apiClient, aiClient, API_PRICE } from './api'
-import Sidebar from './components/Sidebar'
-import Header from './components/Header'
-import TradingTerminal from './components/TradingTerminal'
-import MemeRadar from './components/MemeRadar'
-import Portfolio from './components/Portfolio'
-import Settings from './components/Settings'
+import Sidebar from './components/shared/Sidebar'
+import Header from './components/shared/Header'
+import TradingTerminal from './components/terminal/TradingTerminal'
+import Portfolio from './components/portfolio/Portfolio'
+import Settings from './components/configuracion/Settings'
 import Login from './components/Login'
-import LoadingSplash from './components/LoadingSplash'
-import ErrorBoundary from './components/ErrorBoundary'
-import AgentPanel from './components/AgentPanel'
+import LoadingSplash from './components/shared/LoadingSplash'
+import ErrorBoundary from './components/shared/ErrorBoundary'
+import AgentPanel from './components/agente/AgentPanel'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 
 const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
@@ -17,7 +16,7 @@ const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'D
 export default function App() {
   const [loading, setLoading]         = useState(true)
   const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
-  const [activeTab, setActiveTab]     = useState<'TRADE' | 'MEMES' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState(() => {
     try {
@@ -297,16 +296,9 @@ export default function App() {
                 insight={aiInsights[currentSymbol]}
                 history={tradeHistory}
                 user={user}
+                currentPrice={marketData[currentSymbol]?.price ?? 0}
+                posicionAgenteActiva={estadoAgente.posicionesAbiertas[currentSymbol] ?? null}
                 onTradeExecuted={handleTradeExecuted}
-              />
-            </ErrorBoundary>
-          )}
-          {activeTab === 'MEMES' && (
-            <ErrorBoundary fallback="Error en el radar de memes">
-              <MemeRadar
-                onSelect={setCurrentSymbol}
-                marketData={marketData}
-                aiInsights={aiInsights}
               />
             </ErrorBoundary>
           )}

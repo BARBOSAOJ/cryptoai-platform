@@ -14,6 +14,7 @@ export interface PosicionAbierta {
   cantidad: number
   stopLoss: number
   targetPrice: number
+  invertido: number   // USDT invertidos en la operación
 }
 
 export interface EntradaLog {
@@ -290,7 +291,7 @@ export function useAgenteAutonomo() {
             ...prev,
             posicionesAbiertas: {
               ...prev.posicionesAbiertas,
-              [symbol]: { precio: price, cantidad, stopLoss, targetPrice }
+              [symbol]: { precio: price, cantidad, stopLoss, targetPrice, invertido: cfg.cantidadMaxima }
             }
           }))
           registrarOperacion(0)

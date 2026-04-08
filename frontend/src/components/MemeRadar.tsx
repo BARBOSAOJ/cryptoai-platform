@@ -10,10 +10,14 @@ interface MemeAnalysis {
   alert: 'HIGH' | 'MEDIUM' | 'NONE'
 }
 
+const QUOTES_FILTER = ['ALL', 'USDT', 'BTC', 'ETH', 'BNB'] as const
+type QuoteFilter = typeof QUOTES_FILTER[number]
+
 export default function MemeRadar({ onSelect, marketData }: any) {
   const [radarData, setRadarData] = useState<MemeAnalysis[]>([])
   const [scanning, setScanning] = useState(true)
   const [error, setError] = useState(false)
+  const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('USDT')
 
   useEffect(() => {
     scan()
@@ -43,10 +47,27 @@ export default function MemeRadar({ onSelect, marketData }: any) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Activity size={16} strokeWidth={1.75} style={{ animation: scanning ? 'pulse 1.2s infinite' : 'none', color: scanning ? '#fff' : '#2c4268' }} />
           <span style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '-0.3px' }}>MemeRadar</span>
+          <span style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+            {Object.keys(marketData).length} pares
+          </span>
         </div>
-        <span style={statusStyle(error, scanning)}>
-          {error ? 'IA offline' : scanning ? 'Escaneando...' : 'En vivo'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Filtro de moneda base */}
+          <div style={{ display: 'flex', gap: '3px' }}>
+            {QUOTES_FILTER.map(q => (
+              <button key={q} onClick={() => setQuoteFilter(q)} style={{
+                fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', padding: '4px 8px',
+                borderRadius: '5px', cursor: 'pointer', border: '1px solid',
+                borderColor: quoteFilter === q ? '#243858' : 'transparent',
+                background: quoteFilter === q ? '#111e35' : 'transparent',
+                color: quoteFilter === q ? '#fff' : '#2c4268'
+              }}>{q}</button>
+            ))}
+          </div>
+          <span style={statusStyle(error, scanning)}>
+            {error ? 'IA offline' : scanning ? 'Escaneando...' : 'En vivo'}
+          </span>
+        </div>
       </div>
 
       {error ? (
@@ -56,38 +77,48 @@ export default function MemeRadar({ onSelect, marketData }: any) {
         </div>
       ) : (
         <div style={gridStyle}>
-          {radarData.map(meme => {
-            const isBuy = meme.signal.includes('COMPRAR') || meme.signal.includes('BUY')
-            const price = parseFloat(marketData[meme.symbol]?.price || '0')
-            return (
-              <div key={meme.symbol} onClick={() => onSelect(meme.symbol)} style={cardStyle(meme.alert === 'HIGH')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', marginBottom: '2px' }}>
-                      {meme.symbol.replace('USDT', '')}
+          {radarData
+            .filter(m => quoteFilter === 'ALL' || m.symbol.endsWith(quoteFilter))
+            .map(meme => {
+              const isBuy  = meme.signal.includes('COMPRAR') || meme.signal.includes('BUY')
+              const price  = parseFloat(marketData[meme.symbol]?.price || '0')
+              const change = marketData[meme.symbol]?.change || '+0.00%'
+              const isPos  = !change.startsWith('-')
+              // Detectar el par de cotización para mostrar correctamente
+              const quoteAsset = ['BTC','ETH','BNB','USDT','BUSD'].find(q => meme.symbol.endsWith(q)) || 'USDT'
+              const baseAsset  = meme.symbol.slice(0, meme.symbol.length - quoteAsset.length)
+              return (
+                <div key={meme.symbol} onClick={() => onSelect(meme.symbol)} style={cardStyle(meme.alert === 'HIGH')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', marginBottom: '2px' }}>
+                        {baseAsset}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>/ {quoteAsset}</div>
                     </div>
-                    <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>/ USDT</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                      <span style={signalBadgeStyle(isBuy)}>{isBuy ? 'Comprar' : 'Vender'}</span>
+                      <span style={{ fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: isPos ? '#00d060' : '#ff3b3b' }}>{change}</span>
+                    </div>
                   </div>
-                  <span style={signalBadgeStyle(isBuy)}>{isBuy ? 'Comprar' : 'Vender'}</span>
-                </div>
 
-                <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', letterSpacing: '-0.5px', marginBottom: '12px' }}>
-                  ${price > 0 ? price.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}
-                </div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', letterSpacing: '-0.5px', marginBottom: '12px' }}>
+                    {price > 0 ? price.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—'}
+                  </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {isBuy ? <TrendingUp size={12} color="#00d060" /> : <TrendingDown size={12} color="#ff3b3b" />}
-                    <span style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>{meme.sentiment}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {isBuy ? <TrendingUp size={12} color="#00d060" /> : <TrendingDown size={12} color="#ff3b3b" />}
+                      <span style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>{meme.sentiment}</span>
+                    </div>
+                    <div style={confBarStyle}>
+                      <div style={{ height: '100%', width: `${meme.confidence}%`, background: isBuy ? '#00d060' : '#ff3b3b', borderRadius: '1px', transition: 'width 0.5s' }} />
+                    </div>
+                    <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#2c4268' }}>{meme.confidence}%</span>
                   </div>
-                  <div style={confBarStyle}>
-                    <div style={{ height: '100%', width: `${meme.confidence}%`, background: isBuy ? '#00d060' : '#ff3b3b', borderRadius: '1px', transition: 'width 0.5s' }} />
-                  </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#2c4268' }}>{meme.confidence}%</span>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
         </div>
       )}
     </div>
