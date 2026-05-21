@@ -28,8 +28,12 @@ if _has_ml:
     try:
         import tensorflow as tf
         import joblib
-        lstm_model = tf.keras.models.load_model('models/crypto_lstm_model_v3.h5')
+        import os
+        _ruta = ('models/crypto_lstm_model_v3.keras'
+                 if os.path.exists('models/crypto_lstm_model_v3.keras')
+                 else 'models/crypto_lstm_model_v3.h5')
+        lstm_model = tf.keras.models.load_model(_ruta)
         scaler = joblib.load('models/scaler_v3.gz')
-        logger.info("LSTM cargado")
+        logger.info(f"LSTM cargado desde {_ruta}")
     except Exception as e:
         logger.warning(f"LSTM no disponible: {e}")

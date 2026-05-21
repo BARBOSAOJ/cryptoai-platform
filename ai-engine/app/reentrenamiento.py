@@ -14,7 +14,7 @@ from app.config import logger, _has_ml, BINANCE_KLINES
 
 
 class GestorReentrenamiento:
-    RUTA_MODELO   = 'models/crypto_lstm_model_v3.h5'
+    RUTA_MODELO   = 'models/crypto_lstm_model_v3.keras'
     RUTA_SCALER   = 'models/scaler_v3.gz'
     SEQ_LEN       = 60
     FEATURES      = ['Close', 'Volume', 'RSI', 'MACD', 'StochRSI', 'EMA_cross', 'BB_pos', 'OBV_norm', 'Momentum']
@@ -57,8 +57,8 @@ class GestorReentrenamiento:
             raise RuntimeError("TensorFlow no disponible")
         import tensorflow as tf
         modelo = tf.keras.Sequential([
-            tf.keras.layers.LSTM(128, return_sequences=True,
-                                 input_shape=(self.SEQ_LEN, len(self.FEATURES))),
+            tf.keras.Input(shape=(self.SEQ_LEN, len(self.FEATURES))),
+            tf.keras.layers.LSTM(128, return_sequences=True),
             tf.keras.layers.Dropout(0.2),
             tf.keras.layers.LSTM(64),
             tf.keras.layers.Dropout(0.2),
@@ -159,7 +159,7 @@ class GestorReentrenamiento:
             modelo = self._construir_arquitectura() if (desde_cero or modelos.lstm_model is None) else modelos.lstm_model
             historia = modelo.fit(X_train, y_train, epochs=epochs, batch_size=32,
                                   validation_data=(X_val, y_val), verbose=0)
-            ruta_tmp = self.RUTA_MODELO + '.tmp'
+            ruta_tmp = 'models/crypto_lstm_model_v3_new.keras'
             modelo.save(ruta_tmp)
             os.replace(ruta_tmp, self.RUTA_MODELO)
             joblib.dump(scaler_nuevo, self.RUTA_SCALER)
@@ -208,12 +208,12 @@ gestor_reentrenamiento = GestorReentrenamiento()
 async def _ciclo_reentrenamiento_automatico():
     intervalo_s = GestorReentrenamiento.INTERVALO_H * 3600
     # Reentrenar inmediatamente desde cero si no existe el modelo v3
-    if not os.path.exists(GestorReentrenamiento.RUTA_MODELO):
+    _existe = (os.path.exists(GestorReentrenamiento.RUTA_MODELO) or
+               os.path.exists('models/crypto_lstm_model_v3.h5'))
+    if not _existe:
         logger.info("Modelo v3 no encontrado — reentrenando desde cero con 9 features")
         gestor_reentrenamiento.lanzar(desde_cero=True)
-        await asyncio.sleep(intervalo_s)
-    else:
-        await asyncio.sleep(intervalo_s)
+    await asyncio.sleep(intervalo_s)
     while True:
         logger.info("Reentrenamiento automático — iniciando ciclo periódico")
         gestor_reentrenamiento.lanzar()
