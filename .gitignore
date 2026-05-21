@@ -19,3 +19,12 @@ venv/
 # Node
 node_modules/
 dist/
+
+# Modelos ML entrenados (binarios grandes, se regeneran con reentrenamiento)
+ai-engine/models/*.keras
+ai-engine/models/*.h5
+ai-engine/models/*.gz
+
+# Archivos de runtime
+.pids/
+ai-engine/.venv/
