@@ -92,6 +92,21 @@ start_service() {
   info "Iniciando $name (puerto $port)..."
 }
 
+# ── 0. Ollama ─────────────────────────────────────────────────────────────────
+if command -v ollama &>/dev/null; then
+  if ! nc -z localhost 11434 2>/dev/null; then
+    info "Iniciando Ollama (gemma2:27b)..."
+    ollama serve > "$LOG/ollama.log" 2>&1 &
+    echo $! > "$PIDS/ollama.pid"
+    sleep 3
+    ok "Ollama listo en :11434"
+  else
+    ok "Ollama ya está corriendo en :11434 (omitiendo)"
+  fi
+else
+  info "Ollama no instalado — el chat no estará disponible"
+fi
+
 # ── 1. Infraestructura Docker ─────────────────────────────────────────────────
 info "Levantando PostgreSQL, Redis y RabbitMQ..."
 docker compose -f "$ROOT/infrastructure/docker-compose.yml" up -d \
@@ -114,7 +129,7 @@ fi
 if ! port_in_use 8081; then
   info "Iniciando market-service (puerto 8081)..."
   cd "$ROOT/backend/market-service"
-  ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0 \
+  ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0 -Ddebug=5006 \
     > "$LOG/market-service.log" 2>&1 &
   echo $! > "$PIDS/market-service.pid"
 else
@@ -122,8 +137,8 @@ else
 fi
 
 # Esperar ambos en paralelo
-wait_for_health "http://localhost:8080/q/health" "user-service"   60 &
-wait_for_health "http://localhost:8081/q/health" "market-service" 60 &
+wait_for_health "http://localhost:8080/q/health/live" "user-service"   60 &
+wait_for_health "http://localhost:8081/q/health/live" "market-service" 60 &
 wait
 
 # ── 3. AI Engine + Frontend en paralelo ──────────────────────────────────────
