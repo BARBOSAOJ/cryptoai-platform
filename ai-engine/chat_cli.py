@@ -52,7 +52,7 @@ def c(color, text): return f"{color}{text}{RESET}"
 logging.getLogger("ai-engine").setLevel(logging.CRITICAL)
 print(c(DIM, "  Iniciando BT..."), end="\r", flush=True)
 
-from app.bt.config   import SYMBOL_MAP, SYSTEM_PROMPT
+from app.bt.config   import SYMBOL_MAP, SYSTEM_PROMPT, BT_MODEL
 from app.bt.detectar import detectar_simbolos as _detectar_simbolos, detectar_intencion_trade as _detectar_intencion_trade
 from app.bt.contexto import obtener_contexto_mercado as _obtener_contexto_mercado
 from app.bt.historial import guardar_prediccion, obtener_track_record
@@ -156,7 +156,7 @@ async def _responder(mensaje: str) -> None:
     try:
         import ollama
         stream = ollama.chat(
-            model="gemma2:27b",
+            model=BT_MODEL,
             messages=messages,
             stream=True,
             options={"temperature": 0.7, "num_predict": 1024},

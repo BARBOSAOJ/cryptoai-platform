@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.config import logger
-from app.bt.config   import SYSTEM_PROMPT
+from app.bt.config   import SYSTEM_PROMPT, BT_MODEL
 from app.bt.detectar import detectar_simbolos, detectar_intencion_trade
 from app.bt.contexto import obtener_contexto_mercado, construir_track_record_contexto
 from app.bt.ordenes  import ejecutar_orden
@@ -110,7 +110,7 @@ async def chat_stream(
         try:
             import ollama
             stream = ollama.chat(
-                model='gemma2:27b',
+                model=BT_MODEL,
                 messages=messages,
                 stream=True,
                 options={"temperature": 0.7, "num_predict": 1024},

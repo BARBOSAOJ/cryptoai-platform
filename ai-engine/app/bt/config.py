@@ -1,7 +1,14 @@
 """
 config.py — Constantes globales del sistema BT: system prompt, mapa de símbolos y
 patrones regex de detección de intenciones.
+
+BT_MODEL se lee de la variable de entorno BT_MODEL (por defecto gemma2:27b).
+Tras el fine-tuning, establece BT_MODEL=bt-crypto en el .env para usar el modelo propio.
 """
+import os
+
+# Modelo Ollama que usa BT. Cambia a "bt-crypto" tras ejecutar fine_tune + exportar.
+BT_MODEL: str = os.getenv("BT_MODEL", "gemma2:27b")
 
 SYSTEM_PROMPT = """Eres BT, la inteligencia artificial de análisis financiero integrada en la plataforma CryptoAI.
 
