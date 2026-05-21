@@ -9,6 +9,7 @@ import Login from './components/Login'
 import LoadingSplash from './components/shared/LoadingSplash'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import AgentPanel from './components/agente/AgentPanel'
+import ChatPanel from './components/chat/ChatPanel'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 
 const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
@@ -16,7 +17,7 @@ const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'D
 export default function App() {
   const [loading, setLoading]         = useState(true)
   const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
-  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CHAT' | 'CONFIG'>('TRADE')
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState(() => {
     try {
@@ -321,6 +322,11 @@ export default function App() {
                 pausar={pausar}
                 configurarSimbolo={configurarSimbolo}
               />
+            </ErrorBoundary>
+          )}
+          {activeTab === 'CHAT' && (
+            <ErrorBoundary fallback="Error en el chat">
+              <ChatPanel />
             </ErrorBoundary>
           )}
           {activeTab === 'CONFIG' && (
