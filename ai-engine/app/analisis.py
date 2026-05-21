@@ -12,6 +12,28 @@ from app.indicadores import IndicadoresTecnicos, confluencia_multi_timeframe, ob
 from app.regimen import DetectorRegimen
 from app.sentimiento import obtener_noticias, analizar_titulares
 from app.calibracion import MotorBacktest
+from app.fuentes.fear_greed import obtener_fear_greed
+from app.fuentes.reddit import obtener_sentimiento_reddit
+
+
+def _obtener_resumen_backtest(symbol: str) -> dict:
+    """Lee el resultado del backtest desde Redis si está disponible."""
+    if not redis_client:
+        return None
+    try:
+        raw = redis_client.get(f"backtest:{symbol}")
+        if not raw:
+            return None
+        data = json.loads(raw)
+        return {
+            "accuracy":        data.get("accuracy"),
+            "precision":       data.get("precision"),
+            "muestras":        data.get("muestras"),
+            "sharpe_simulado": data.get("sharpe_simulado"),
+            "timestamp":       data.get("timestamp"),
+        }
+    except Exception:
+        return None
 
 
 async def realizar_analisis(symbol: str, price: float, history: list, volumes: list = None):
@@ -29,6 +51,21 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
 
     news_data = obtener_noticias(symbol)
     news_details, avg_sentiment = analizar_titulares(news_data)
+
+    # Fuentes sociales (en paralelo, no bloquean si fallan)
+    try:
+        fear_greed_data, reddit_data = await asyncio.gather(
+            asyncio.to_thread(obtener_fear_greed),
+            asyncio.to_thread(obtener_sentimiento_reddit, symbol),
+            return_exceptions=True,
+        )
+        if isinstance(fear_greed_data, Exception):
+            fear_greed_data = {"valor": 50, "clasificacion": "Neutral", "normalizado": 0.0}
+        if isinstance(reddit_data, Exception):
+            reddit_data = {"sentimiento": 0.0, "posts_analizados": 0, "clasificacion": "sin datos", "detalle": []}
+    except Exception:
+        fear_greed_data = {"valor": 50, "clasificacion": "Neutral", "normalizado": 0.0}
+        reddit_data     = {"sentimiento": 0.0, "posts_analizados": 0, "clasificacion": "sin datos", "detalle": []}
 
     tech_score     = 0.0
     lstm_active    = False
@@ -194,12 +231,12 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     if señal_compra_valida:  signal = "COMPRAR 🚀"
     elif señal_venta_valida: signal = "VENDER 📉"
 
+    regimen_actual = indicators.get("regimen", "RANGING")
+
     # ── Filtro de régimen (issue #32) ─────────────────────────────────────────
     # Solo emitir COMPRAR en régimen TRENDING; en otros regímenes la señal es ruido
     if signal == "COMPRAR 🚀" and regimen_actual not in ("TRENDING",):
         signal = "MANTENER ⚖️"
-
-    regimen_actual = indicators.get("regimen", "RANGING")
     base_max = 85 if lstm_active else 74 if indicators else 62
     if regimen_actual == "TRENDING":     base_max = min(base_max + 5, 91)
     elif regimen_actual == "VOLATILE":   base_max = max(base_max - 10, 52)
@@ -223,48 +260,66 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
 
     # ── Score de convicción unificado 0-100 ────────────────────────────────────
     # Cada componente normalizado a -1..+1, luego mapeado a 0..100
-    lstm_component      = max(-1.0, min(1.0, tech_score / 5.0)) if lstm_active else 0.0
-    sentiment_component = max(-1.0, min(1.0, avg_sentiment * 2.0))
-    rsi_val_raw         = indicators.get("rsi", 50.0) if indicators else 50.0
-    rsi_component       = max(-1.0, min(1.0, (50.0 - rsi_val_raw) / 20.0)) if indicators else 0.0
-    macd_component      = max(-1.0, min(1.0, indicators.get("macd_histogram", 0.0) * 20.0)) if indicators else 0.0
-    _regime_map         = {"TRENDING": 0.4, "RANGING": 0.0, "VOLATILE": -0.4, "TRANSITION": -0.2}
-    regime_component    = _regime_map.get(regimen_actual, 0.0)
+    lstm_component       = max(-1.0, min(1.0, tech_score / 5.0)) if lstm_active else 0.0
+    sentiment_component  = max(-1.0, min(1.0, avg_sentiment * 2.0))
+    rsi_val_raw          = indicators.get("rsi", 50.0) if indicators else 50.0
+    rsi_component        = max(-1.0, min(1.0, (50.0 - rsi_val_raw) / 20.0)) if indicators else 0.0
+    macd_component       = max(-1.0, min(1.0, indicators.get("macd_histogram", 0.0) * 20.0)) if indicators else 0.0
+    _regime_map          = {"TRENDING": 0.4, "RANGING": 0.0, "VOLATILE": -0.4, "TRANSITION": -0.2}
+    regime_component     = _regime_map.get(regimen_actual, 0.0)
+    fear_greed_component = max(-1.0, min(1.0, float(fear_greed_data.get("normalizado", 0.0))))
+    reddit_component     = max(-1.0, min(1.0, float(reddit_data.get("sentimiento", 0.0)) * 2.0))
 
-    w_lstm    = 0.35 if lstm_active else 0.0
-    w_finbert = 0.20
-    w_rsi     = 0.15 if indicators else 0.0
-    w_macd    = 0.15 if indicators else 0.0
-    w_regime  = 0.15 if indicators else 0.0
-    w_total   = w_lstm + w_finbert + w_rsi + w_macd + w_regime or 0.20
+    w_lstm       = 0.30 if lstm_active else 0.0
+    w_finbert    = 0.15
+    w_rsi        = 0.13 if indicators else 0.0
+    w_macd       = 0.12 if indicators else 0.0
+    w_regime     = 0.12 if indicators else 0.0
+    w_fear_greed = 0.10
+    w_reddit     = 0.08 if reddit_data.get("posts_analizados", 0) > 0 else 0.0
+    w_total      = w_lstm + w_finbert + w_rsi + w_macd + w_regime + w_fear_greed + w_reddit or 0.25
 
     raw_conv = (
-        lstm_component   * w_lstm  +
-        sentiment_component * w_finbert +
-        rsi_component    * w_rsi   +
-        macd_component   * w_macd  +
-        regime_component * w_regime
+        lstm_component       * w_lstm       +
+        sentiment_component  * w_finbert    +
+        rsi_component        * w_rsi        +
+        macd_component       * w_macd       +
+        regime_component     * w_regime     +
+        fear_greed_component * w_fear_greed +
+        reddit_component     * w_reddit
     ) / w_total
     conviction_score = max(0, min(100, int(round((raw_conv + 1.0) * 50))))
     # Penalizar convicción si el régimen no es favorable para comprar
     if regimen_actual not in ("TRENDING",) and conviction_score > 49:
         conviction_score = min(conviction_score, 49)
 
+    import math
+
+    def _safe(v):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return 0.0
+        if isinstance(v, dict):
+            return {k: _safe(val) for k, val in v.items()}
+        return v
+
     result = {
         "symbol":           symbol,
         "signal":           signal,
         "confidence":       f"{conf}%",
         "conviction_score": conviction_score,
-        "tech_impact":      round(tech_score, 2),
-        "news_impact":      round(avg_sentiment, 2),
+        "tech_impact":      _safe(round(tech_score, 2)),
+        "news_impact":      _safe(round(avg_sentiment, 2)),
         "news_details":     news_details,
+        "fear_greed":       fear_greed_data,
+        "reddit":           reddit_data,
+        "backtest":         _obtener_resumen_backtest(symbol),
         "lstm_active":      lstm_active,
-        "predicted_next":   predicted_next,
-        "indicators":       indicators,
-        "multi_timeframe":  mtf,
-        "market_regime":    regimen_info if indicators else {"regimen": "RANGING"},
-        "entry_price":      entry_price,
-        "target_price":     target_price,
+        "predicted_next":   _safe(predicted_next),
+        "indicators":       _safe(indicators),
+        "multi_timeframe":  _safe(mtf),
+        "market_regime":    _safe(regimen_info) if indicators else {"regimen": "RANGING"},
+        "entry_price":      _safe(entry_price),
+        "target_price":     _safe(target_price),
     }
 
     if redis_client:
@@ -280,14 +335,3 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     return result
 
 
-async def _precalentar_cache(symbols: list):
-    logger.info(f"Pre-calentando caché para {symbols}...")
-    for symbol in symbols:
-        try:
-            data = obtener_velas_binance(symbol, limit=100)
-            if len(data["prices"]) >= 5:
-                await realizar_analisis(symbol, data["prices"][-1], data["prices"], data["volumes"])
-                logger.info(f"Pre-warm OK: {symbol}")
-            await asyncio.sleep(0.3)
-        except Exception as e:
-            logger.debug(f"Pre-warm fallido para {symbol}: {e}")
