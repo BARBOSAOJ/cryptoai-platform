@@ -83,15 +83,6 @@ wait_for_health() {
   ok "$name healthy ($url)"
 }
 
-start_service() {
-  local name=$1 port=$2
-  if port_in_use "$port"; then
-    ok "$name ya está corriendo en :$port (omitiendo)"
-    return 0
-  fi
-  info "Iniciando $name (puerto $port)..."
-}
-
 # ── 0. Ollama ─────────────────────────────────────────────────────────────────
 if command -v ollama &>/dev/null; then
   if ! nc -z localhost 11434 2>/dev/null; then
@@ -138,8 +129,10 @@ fi
 
 # Esperar ambos en paralelo
 wait_for_health "http://localhost:8080/q/health/live" "user-service"   60 &
+WH1=$!
 wait_for_health "http://localhost:8081/q/health/live" "market-service" 60 &
-wait
+WH2=$!
+wait $WH1 $WH2
 
 # ── 3. AI Engine + Frontend en paralelo ──────────────────────────────────────
 if ! port_in_use 8002; then
@@ -171,8 +164,10 @@ else
 fi
 
 wait_for_health "http://localhost:8002/health" "ai-engine" 30 &
+WH3=$!
 wait_for_port   5173                           "frontend"  30 &
-wait
+WH4=$!
+wait $WH3 $WH4
 
 # ── Resumen ───────────────────────────────────────────────────────────────────
 echo ""
