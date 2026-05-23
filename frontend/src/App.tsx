@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot } from 'lucide-react'
+import { Activity, Power } from 'lucide-react'
 import { apiClient, aiClient, API_PRICE } from './api'
-import Sidebar from './components/shared/Sidebar'
 import Header from './components/shared/Header'
-import TradingTerminal from './components/terminal/TradingTerminal'
-import Portfolio from './components/portfolio/Portfolio'
-import Settings from './components/configuracion/Settings'
+import ChartPanel from './components/terminal/ChartPanel'
 import Login from './components/Login'
 import LoadingSplash from './components/shared/LoadingSplash'
 import ErrorBoundary from './components/shared/ErrorBoundary'
-import AgentPanel from './components/agente/AgentPanel'
 import ChatPanel from './components/chat/ChatPanel'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 
@@ -18,9 +14,6 @@ const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'D
 export default function App() {
   const [loading, setLoading]         = useState(true)
   const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
-  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
-  const [chatOpen, setChatOpen]       = useState(false)
-  const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState(() => {
     try {
@@ -42,9 +35,7 @@ export default function App() {
   const [sseConnected, setSseConnected] = useState(false)
   const [dataError, setDataError]     = useState<string | null>(null)
   const [aiHealth, setAiHealth]       = useState<{ lstm: boolean; finbert: boolean } | null>(null)
-  const [portfolioVersion, setPortfolioVersion] = useState(0)
-
-  const historyRef          = useRef<Record<string, number[]>>({})
+const historyRef          = useRef<Record<string, number[]>>({})
   const volumesRef          = useRef<Record<string, number[]>>({})
   const currentSymRef       = useRef(currentSymbol)
   const pollingErrorCount   = useRef(0)
@@ -52,7 +43,7 @@ export default function App() {
   const reconnectCount = useRef(0)
 
   // ─── Agente autónomo ───────────────────────────────────────────────────────
-  const { estado: estadoAgente, activar, pausar, configurarSimbolo, procesarTick, alertasStopLoss } = useAgenteAutonomo()
+  const { estado: estadoAgente, activar, pausar, procesarTick, alertasStopLoss } = useAgenteAutonomo()
 
   useEffect(() => { currentSymRef.current = currentSymbol }, [currentSymbol])
 
@@ -261,133 +252,188 @@ export default function App() {
     setIsLoggedIn(false)
   }
 
-  const handleTradeExecuted = (trade: any) => {
-    setTradeHistory(prev => [trade, ...prev].slice(0, 50))
-    setPortfolioVersion(v => v + 1)   // fuerza refresco del portfolio
-  }
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (loading)     return <LoadingSplash />
   if (!isLoggedIn) return <Login onLoginSuccess={handleLoginSuccess} />
 
+  const posicionActual = estadoAgente.posicionesAbiertas[currentSymbol] ?? null
+  const precioActual   = marketData[currentSymbol]?.price ?? 0
+  const pnlEuros       = posicionActual ? posicionActual.cantidad * precioActual - posicionActual.invertido : 0
+  const pnlPct         = posicionActual && posicionActual.invertido > 0 ? (pnlEuros / posicionActual.invertido) * 100 : 0
+  const insight        = aiInsights[currentSymbol]
+  const isBuy          = insight?.signal?.includes('COMPRAR') || insight?.signal?.includes('BUY')
+  const confidence     = (() => {
+    const raw = insight?.confidence
+    if (raw === undefined || raw === null) return null
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace('%', ''), 10)
+    return isNaN(n) ? null : Math.max(0, Math.min(100, n))
+  })()
+
   return (
-    <div style={{
-      display: 'flex', height: '100vh', width: '100vw',
-      background: '#091220', color: '#c8d8ec', overflow: 'hidden',
-      transition: '0.3s',
-      boxShadow: alertFlash ? 'inset 0 0 100px rgba(8, 153, 129, 0.4)' : 'none'
-    }}>
-      {/* Widget flotante BT */}
-      {chatOpen && (
-        <div style={{
-          position: 'fixed', bottom: '86px', right: '24px', zIndex: 1000,
-          width: '380px', height: '560px', borderRadius: '16px', overflow: 'hidden',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.15)',
-          animation: 'fadeUp 0.18s ease-out',
-        }}>
-          <ErrorBoundary fallback="Error en el chat">
-            <ChatPanel
-              onClose={() => setChatOpen(false)}
-              onNewAlert={() => setUnreadAlerts(n => n + 1)}
-            />
-          </ErrorBoundary>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', background:'#060d1a', color:'#c8d8ec', overflow:'hidden' }}>
+
+      <Header
+        currentSymbol={currentSymbol}
+        setCurrentSymbol={setCurrentSymbol}
+        user={user}
+        marketData={marketData}
+        sseConnected={sseConnected}
+        aiHealth={aiHealth}
+        stopAlertCount={alertasStopLoss.size}
+        onLogout={handleLogout}
+      />
+
+      {dataError && (
+        <div style={{ background:'rgba(255,59,59,0.08)', borderBottom:'1px solid rgba(255,59,59,0.2)', padding:'5px 20px', fontSize:'11px', color:'#ff6b6b', display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+          <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#ff3b3b', flexShrink:0 }} />
+          {dataError}
         </div>
       )}
-      <button
-        onClick={() => { setChatOpen(o => !o); if (!chatOpen) setUnreadAlerts(0) }}
-        style={{
-          position: 'fixed', bottom: '24px', right: '24px', zIndex: 1001,
-          width: '52px', height: '52px', borderRadius: '50%', cursor: 'pointer',
-          background: chatOpen ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)',
-          border: '1px solid rgba(99,102,241,0.35)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 24px rgba(99,102,241,0.25)',
-          transition: 'all 0.15s',
-        }}
-        title="Chat con BT"
-      >
-        <Bot size={20} color="#818cf8" strokeWidth={1.75} />
-        {unreadAlerts > 0 && !chatOpen && (
-          <span style={{
-            position: 'absolute', top: '6px', right: '6px',
-            width: '16px', height: '16px', borderRadius: '50%',
-            background: '#f59e0b', border: '2px solid #091220',
-            fontSize: '9px', fontWeight: 700, color: '#000',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'JetBrains Mono, monospace',
-          }}>
-            {unreadAlerts > 9 ? '9+' : unreadAlerts}
-          </span>
-        )}
-      </button>
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
 
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Header
-          currentSymbol={currentSymbol}
-          setCurrentSymbol={setCurrentSymbol}
-          user={user}
-          marketData={marketData}
-          sseConnected={sseConnected}
-          aiHealth={aiHealth}
-          stopAlertCount={alertasStopLoss.size}
-        />
-        {dataError && (
-          <div style={{
-            background: 'rgba(255,59,59,0.08)', borderBottom: '1px solid rgba(255,59,59,0.2)',
-            padding: '6px 20px', fontSize: '11px', color: '#ff6b6b',
-            display: 'flex', alignItems: 'center', gap: '8px'
-          }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ff3b3b', flexShrink: 0 }} />
-            {dataError}
+      <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
+
+        {/* ── LEFT: chart + ticker + status ──────────────────────────────── */}
+        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+
+          {/* Ticker strip */}
+          <div style={{ height:'54px', background:'#07101e', borderBottom:'1px solid #111e35', display:'flex', alignItems:'stretch', overflowX:'auto', flexShrink:0 }}>
+            {MAIN_COINS.map(sym => {
+              const d      = marketData[sym]
+              const p      = d?.price ?? 0
+              const ch     = d?.change || '+0.00%'
+              const up     = !ch.startsWith('-')
+              const name   = sym.replace('USDT', '')
+              const active = sym === currentSymbol
+              return (
+                <button key={sym} onClick={() => setCurrentSymbol(sym)} style={{
+                  display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'flex-start',
+                  padding:'0 14px', border:'none', cursor:'pointer', flexShrink:0,
+                  background: active ? 'rgba(99,102,241,0.1)' : 'transparent',
+                  borderBottom: active ? '2px solid #6366f1' : '2px solid transparent',
+                  transition:'all 0.15s',
+                }}>
+                  <span style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', letterSpacing:'0.5px', marginBottom:'2px' }}>{name}</span>
+                  <span style={{ fontSize:'11px', fontWeight:600, fontFamily:'JetBrains Mono, monospace', color: active ? '#c8d8ec' : '#7890b0' }}>
+                    {p > 0 ? p.toLocaleString('en', { maximumFractionDigits: p < 1 ? 6 : 2 }) : '—'}
+                  </span>
+                  <span style={{ fontSize:'9px', fontFamily:'JetBrains Mono, monospace', color: up ? '#00d060' : '#ff3b3b' }}>{ch}</span>
+                </button>
+              )
+            })}
+
+            {/* Separador + chip señal IA */}
+            {insight && confidence !== null && (
+              <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'8px', padding:'0 16px', flexShrink:0 }}>
+                <div style={{ width:'1px', height:'28px', background:'#111e35' }} />
+                <div style={{
+                  display:'flex', alignItems:'center', gap:'6px',
+                  padding:'5px 12px', borderRadius:'7px',
+                  background: isBuy ? 'rgba(0,208,96,0.08)' : 'rgba(99,102,241,0.06)',
+                  border: `1px solid ${isBuy ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.15)'}`,
+                }}>
+                  <span style={{ fontSize:'8px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px' }}>BT·IA</span>
+                  <span style={{ fontSize:'10px', fontWeight:700, color: isBuy ? '#00d060' : '#818cf8' }}>
+                    {insight.signal}
+                  </span>
+                  <span style={{ fontSize:'9px', fontFamily:'JetBrains Mono, monospace', color:'#486080' }}>{confidence}%</span>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        <main style={{ flex: 1, overflow: 'hidden' }}>
-          {activeTab === 'TRADE' && (
-            <ErrorBoundary fallback="Error en el terminal de trading">
-              <TradingTerminal
-                symbol={currentSymbol}
-                insight={aiInsights[currentSymbol]}
-                history={tradeHistory}
-                user={user}
-                currentPrice={marketData[currentSymbol]?.price ?? 0}
-                posicionAgenteActiva={estadoAgente.posicionesAbiertas[currentSymbol] ?? null}
-                onTradeExecuted={handleTradeExecuted}
-              />
+
+          {/* Chart principal */}
+          <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
+            <ErrorBoundary fallback="Error en el chart">
+              <ChartPanel symbol={currentSymbol} insight={insight} />
             </ErrorBoundary>
-          )}
-          {activeTab === 'PORTFOLIO' && (
-            <ErrorBoundary fallback="Error en el portfolio">
-              <Portfolio user={user} refreshTrigger={portfolioVersion} marketData={marketData} />
-            </ErrorBoundary>
-          )}
-          {activeTab === 'BOT' && (
-            <ErrorBoundary fallback="Error en el agente autónomo">
-              <AgentPanel
-                estado={estadoAgente}
-                activar={activar}
-                pausar={pausar}
-                configurarSimbolo={configurarSimbolo}
-              />
-            </ErrorBoundary>
-          )}
-          {activeTab === 'CONFIG' && (
-            <ErrorBoundary fallback="Error en la configuración">
-              <Settings
-                setRefreshInterval={setRefreshInterval}
-                currentInterval={refreshInterval}
-                aiHealth={aiHealth}
-              />
-            </ErrorBoundary>
-          )}
-        </main>
+          </div>
+
+          {/* Status bar — posición + agente */}
+          <div style={{ height:'64px', background:'#07101e', borderTop:'1px solid #111e35', display:'flex', alignItems:'center', gap:'0', flexShrink:0, overflow:'hidden' }}>
+
+            {/* Posición activa */}
+            {posicionActual ? (
+              <div style={{ display:'flex', alignItems:'center', gap:'16px', padding:'0 20px', borderRight:'1px solid #111e35', height:'100%' }}>
+                <div>
+                  <div style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', marginBottom:'2px' }}>POSICIÓN · {currentSymbol.replace('USDT','')}</div>
+                  <div style={{ fontSize:'11px', fontWeight:600, color:'#c8d8ec', fontFamily:'JetBrains Mono, monospace' }}>
+                    ${precioActual.toLocaleString('en', { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', marginBottom:'2px' }}>P&L</div>
+                  <div style={{ fontSize:'13px', fontWeight:700, color: pnlEuros >= 0 ? '#00d060' : '#ff3b3b', fontFamily:'JetBrains Mono, monospace' }}>
+                    {pnlEuros >= 0 ? '+' : ''}{pnlEuros.toFixed(2)}€
+                    <span style={{ fontSize:'9px', marginLeft:'4px' }}>({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', marginBottom:'2px' }}>STOP</div>
+                  <div style={{ fontSize:'11px', fontFamily:'JetBrains Mono, monospace', color:'#486080' }}>
+                    ${posicionActual.stopLoss.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace', marginBottom:'2px' }}>TARGET</div>
+                  <div style={{ fontSize:'11px', fontFamily:'JetBrains Mono, monospace', color:'#486080' }}>
+                    ${posicionActual.targetPrice.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display:'flex', alignItems:'center', padding:'0 20px', borderRight:'1px solid #111e35', height:'100%' }}>
+                <span style={{ fontSize:'10px', color:'#1e3050', fontFamily:'JetBrains Mono, monospace' }}>Sin posición abierta en {currentSymbol.replace('USDT','')}</span>
+              </div>
+            )}
+
+            {/* Estado agente */}
+            <div style={{ display:'flex', alignItems:'center', gap:'12px', padding:'0 20px', height:'100%' }}>
+              <button
+                onClick={estadoAgente.activo ? pausar : activar}
+                style={{
+                  display:'flex', alignItems:'center', gap:'6px', padding:'6px 12px', borderRadius:'7px',
+                  background: estadoAgente.activo ? 'rgba(0,208,96,0.08)' : '#0b1424',
+                  border: `1px solid ${estadoAgente.activo ? 'rgba(0,208,96,0.2)' : '#1a2840'}`,
+                  color: estadoAgente.activo ? '#00d060' : '#2c4268',
+                  fontSize:'10px', fontFamily:'JetBrains Mono, monospace', cursor:'pointer', letterSpacing:'0.5px',
+                }}
+              >
+                <Power size={11} strokeWidth={2} />
+                AGENTE · {estadoAgente.activo ? 'ON' : 'OFF'}
+              </button>
+              {estadoAgente.activo && (
+                <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                  <Activity size={10} color="#00d060" />
+                  <span style={{ fontSize:'9px', color:'#2c4268', fontFamily:'JetBrains Mono, monospace' }}>
+                    {Object.values(estadoAgente.posicionesAbiertas).length} pos · {estadoAgente.log[0]?.mensaje?.slice(0,40) || 'vigilando'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Historial reciente rápido */}
+            {alertFlash && (
+              <div style={{ marginLeft:'auto', padding:'0 20px', flexShrink:0 }}>
+                <div style={{ fontSize:'9px', color:'#00d060', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,208,96,0.08)', border:'1px solid rgba(0,208,96,0.2)', padding:'4px 10px', borderRadius:'6px', animation:'pulse 1s infinite' }}>
+                  SEÑAL COMPRA DETECTADA
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RIGHT: BT siempre visible ──────────────────────────────────── */}
+        <div style={{ width:'400px', flexShrink:0, borderLeft:'1px solid #111e35' }}>
+          <ErrorBoundary fallback="Error en BT">
+            <ChatPanel />
+          </ErrorBoundary>
+        </div>
       </div>
+
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+      `}</style>
     </div>
   )
 }
