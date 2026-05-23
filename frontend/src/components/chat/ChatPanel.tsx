@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader, MessageCircle, Bell } from 'lucide-react'
+import { Send, Bot, User, Loader, MessageCircle, Bell, X } from 'lucide-react'
 import { API_AI } from '../../api'
 
 interface Mensaje {
@@ -7,6 +7,11 @@ interface Mensaje {
   content: string
   ts: string
   urgencia?: number
+}
+
+interface ChatPanelProps {
+  onClose?: () => void
+  onNewAlert?: () => void
 }
 
 const SUGERENCIAS = [
@@ -17,7 +22,7 @@ const SUGERENCIAS = [
   '¿Qué indica el Fear & Greed hoy?',
 ]
 
-export default function ChatPanel() {
+export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
   const [mensajes, setMensajes]     = useState<Mensaje[]>([])
   const [input, setInput]           = useState('')
   const [cargando, setCargando]     = useState(false)
@@ -30,7 +35,6 @@ export default function ChatPanel() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensajes])
 
-  // Suscripción a alertas proactivas de BT
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) return
@@ -45,10 +49,11 @@ export default function ChatPanel() {
           ts:       new Date().toISOString(),
           urgencia: alerta.urgencia ?? 1,
         }])
+        onNewAlert?.()
       } catch { /* chunk inválido */ }
     }
     return () => es.close()
-  }, [])
+  }, [onNewAlert])
 
   const enviar = async (texto?: string) => {
     const msg = (texto ?? input).trim()
@@ -142,56 +147,66 @@ export default function ChatPanel() {
 
       {/* Header */}
       <div style={{
-        padding: '16px 20px', borderBottom: '1px solid #111e35',
-        display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0
+        padding: '14px 16px', borderBottom: '1px solid #111e35',
+        display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0
       }}>
         <div style={{
-          width: '36px', height: '36px', borderRadius: '10px',
+          width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0,
           background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
           display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
-          <Bot size={18} color="#818cf8" strokeWidth={1.75} />
+          <Bot size={16} color="#818cf8" strokeWidth={1.75} />
         </div>
-        <div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#c8d8ec' }}>BT</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#c8d8ec' }}>BT — Asesor IA</div>
           <div style={{ fontSize: '10px', color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
-            AI · análisis de mercados en tiempo real
+            LSTM · Fear &amp; Greed · Reddit
           </div>
         </div>
         {ollamaOk !== null && (
           <div style={{
-            marginLeft: 'auto', fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
-            padding: '3px 8px', borderRadius: '5px',
+            fontSize: '9px', fontFamily: 'JetBrains Mono, monospace',
+            padding: '2px 7px', borderRadius: '5px', flexShrink: 0,
             color: ollamaOk ? '#00d060' : '#ff3b3b',
             background: ollamaOk ? 'rgba(0,208,96,0.08)' : 'rgba(255,59,59,0.08)',
             border: `1px solid ${ollamaOk ? 'rgba(0,208,96,0.2)' : 'rgba(255,59,59,0.2)'}`,
           }}>
-            {ollamaOk ? 'OLLAMA OK' : 'OLLAMA ERROR'}
+            {ollamaOk ? 'OK' : 'ERR'}
           </div>
+        )}
+        {onClose && (
+          <button onClick={onClose} style={{
+            width: '28px', height: '28px', borderRadius: '7px', flexShrink: 0,
+            background: 'none', border: '1px solid #1a2840', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#486080', transition: 'all 0.15s',
+          }}>
+            <X size={14} strokeWidth={2} />
+          </button>
         )}
       </div>
 
       {/* Mensajes */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
         {mensajes.length === 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', marginTop: '40px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', marginTop: '24px' }}>
             <div style={{
-              width: '56px', height: '56px', borderRadius: '16px',
+              width: '48px', height: '48px', borderRadius: '14px',
               background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
               display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}>
-              <MessageCircle size={26} color="#818cf8" strokeWidth={1.5} />
+              <MessageCircle size={22} color="#818cf8" strokeWidth={1.5} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '15px', fontWeight: 600, color: '#7890b0', marginBottom: '6px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#7890b0', marginBottom: '4px' }}>
                 ¿En qué puedo ayudarte?
               </div>
-              <div style={{ fontSize: '12px', color: '#2c4268', maxWidth: '320px' }}>
-                Análisis LSTM · Fear &amp; Greed · Sentimiento Reddit · Ejecución de órdenes
+              <div style={{ fontSize: '11px', color: '#2c4268' }}>
+                Análisis · Señales · Órdenes por voz
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '420px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
               {SUGERENCIAS.map((s, i) => (
                 <button key={i} onClick={() => enviar(s)} style={sugerenciaStyle}>
                   {s}
@@ -207,17 +222,17 @@ export default function ChatPanel() {
             const bg    = msg.urgencia === 2 ? 'rgba(245,158,11,0.06)' : 'rgba(99,102,241,0.06)'
             const border= msg.urgencia === 2 ? 'rgba(245,158,11,0.2)' : 'rgba(99,102,241,0.15)'
             return (
-              <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                 <div style={{
-                  width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0,
+                  width: '26px', height: '26px', borderRadius: '7px', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: bg, border: `1px solid ${border}`,
                 }}>
-                  <Bell size={13} color={color} strokeWidth={2} />
+                  <Bell size={12} color={color} strokeWidth={2} />
                 </div>
                 <div style={{
-                  maxWidth: '75%', padding: '10px 14px', borderRadius: '12px',
-                  fontSize: '12px', lineHeight: '1.6', color: color,
+                  maxWidth: '80%', padding: '8px 12px', borderRadius: '10px',
+                  fontSize: '12px', lineHeight: '1.6', color,
                   background: bg, border: `1px solid ${border}`,
                   whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 }}>
@@ -228,24 +243,24 @@ export default function ChatPanel() {
           }
           return (
             <div key={i} style={{
-              display: 'flex', gap: '10px',
+              display: 'flex', gap: '8px',
               flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
               alignItems: 'flex-start'
             }}>
               <div style={{
-                width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0,
+                width: '26px', height: '26px', borderRadius: '7px', flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: msg.role === 'user' ? 'rgba(0,208,96,0.1)' : 'rgba(99,102,241,0.1)',
                 border: `1px solid ${msg.role === 'user' ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.2)'}`,
               }}>
                 {msg.role === 'user'
-                  ? <User size={14} color="#00d060" strokeWidth={2} />
-                  : <Bot size={14} color="#818cf8" strokeWidth={1.75} />
+                  ? <User size={13} color="#00d060" strokeWidth={2} />
+                  : <Bot size={13} color="#818cf8" strokeWidth={1.75} />
                 }
               </div>
               <div style={{
-                maxWidth: '75%', padding: '10px 14px', borderRadius: '12px',
-                fontSize: '13px', lineHeight: '1.6', color: '#c8d8ec',
+                maxWidth: '80%', padding: '9px 12px', borderRadius: '10px',
+                fontSize: '12px', lineHeight: '1.6', color: '#c8d8ec',
                 background: msg.role === 'user' ? 'rgba(0,208,96,0.06)' : '#07101e',
                 border: `1px solid ${msg.role === 'user' ? 'rgba(0,208,96,0.12)' : '#111e35'}`,
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -266,34 +281,33 @@ export default function ChatPanel() {
 
       {/* Input */}
       <div style={{
-        padding: '12px 16px', borderTop: '1px solid #111e35', flexShrink: 0,
-        display: 'flex', gap: '10px', alignItems: 'flex-end'
+        padding: '10px 12px', borderTop: '1px solid #111e35', flexShrink: 0,
+        display: 'flex', gap: '8px', alignItems: 'flex-end'
       }}>
         <textarea
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Escribe tu pregunta... (Enter para enviar, Shift+Enter para nueva línea)"
+          placeholder="Escribe tu pregunta... (Enter para enviar)"
           rows={1}
           style={{
             flex: 1, background: '#07101e', border: '1px solid #1a2840',
-            borderRadius: '10px', color: '#c8d8ec', padding: '10px 14px',
-            fontSize: '13px', fontFamily: 'Inter, sans-serif', outline: 'none',
-            resize: 'none', lineHeight: '1.5', maxHeight: '120px',
-            overflowY: 'auto',
+            borderRadius: '9px', color: '#c8d8ec', padding: '9px 12px',
+            fontSize: '12px', fontFamily: 'Inter, sans-serif', outline: 'none',
+            resize: 'none', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto',
           }}
           onInput={e => {
             const t = e.currentTarget
             t.style.height = 'auto'
-            t.style.height = Math.min(t.scrollHeight, 120) + 'px'
+            t.style.height = Math.min(t.scrollHeight, 100) + 'px'
           }}
         />
         <button
           onClick={() => enviar()}
           disabled={!input.trim() || cargando}
           style={{
-            width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0,
+            width: '36px', height: '36px', borderRadius: '9px', flexShrink: 0,
             background: input.trim() && !cargando ? 'rgba(99,102,241,0.2)' : '#0b1424',
             border: `1px solid ${input.trim() && !cargando ? 'rgba(99,102,241,0.35)' : '#1a2840'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -302,8 +316,8 @@ export default function ChatPanel() {
           }}
         >
           {cargando
-            ? <Loader size={15} color="#818cf8" strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} />
-            : <Send size={15} color={input.trim() ? '#818cf8' : '#2c4268'} strokeWidth={2} />
+            ? <Loader size={14} color="#818cf8" strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} />
+            : <Send size={14} color={input.trim() ? '#818cf8' : '#2c4268'} strokeWidth={2} />
           }
         </button>
       </div>
@@ -320,13 +334,13 @@ export default function ChatPanel() {
 }
 
 const sugerenciaStyle: React.CSSProperties = {
-  background: '#07101e', border: '1px solid #111e35', borderRadius: '8px',
-  padding: '8px 14px', color: '#486080', fontSize: '12px', cursor: 'pointer',
+  background: '#07101e', border: '1px solid #111e35', borderRadius: '7px',
+  padding: '7px 12px', color: '#486080', fontSize: '11px', cursor: 'pointer',
   textAlign: 'left', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s',
 }
 
 const dotStyle = (i: number): React.CSSProperties => ({
-  width: '5px', height: '5px', borderRadius: '50%', background: '#818cf8',
+  width: '4px', height: '4px', borderRadius: '50%', background: '#818cf8',
   display: 'inline-block',
   animation: `blink 1.2s ${i * 0.2}s infinite ease-in-out`,
 })

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Bot } from 'lucide-react'
 import { apiClient, aiClient, API_PRICE } from './api'
 import Sidebar from './components/shared/Sidebar'
 import Header from './components/shared/Header'
@@ -17,7 +18,9 @@ const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'D
 export default function App() {
   const [loading, setLoading]         = useState(true)
   const [isLoggedIn, setIsLoggedIn]   = useState(() => { try { return !!localStorage.getItem('token') } catch { return false } })
-  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CHAT' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]     = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [chatOpen, setChatOpen]       = useState(false)
+  const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT')
   const [user, setUser] = useState(() => {
     try {
@@ -274,6 +277,56 @@ export default function App() {
       transition: '0.3s',
       boxShadow: alertFlash ? 'inset 0 0 100px rgba(8, 153, 129, 0.4)' : 'none'
     }}>
+      {/* Widget flotante BT */}
+      {chatOpen && (
+        <div style={{
+          position: 'fixed', bottom: '86px', right: '24px', zIndex: 1000,
+          width: '380px', height: '560px', borderRadius: '16px', overflow: 'hidden',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.15)',
+          animation: 'fadeUp 0.18s ease-out',
+        }}>
+          <ErrorBoundary fallback="Error en el chat">
+            <ChatPanel
+              onClose={() => setChatOpen(false)}
+              onNewAlert={() => setUnreadAlerts(n => n + 1)}
+            />
+          </ErrorBoundary>
+        </div>
+      )}
+      <button
+        onClick={() => { setChatOpen(o => !o); if (!chatOpen) setUnreadAlerts(0) }}
+        style={{
+          position: 'fixed', bottom: '24px', right: '24px', zIndex: 1001,
+          width: '52px', height: '52px', borderRadius: '50%', cursor: 'pointer',
+          background: chatOpen ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)',
+          border: '1px solid rgba(99,102,241,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 24px rgba(99,102,241,0.25)',
+          transition: 'all 0.15s',
+        }}
+        title="Chat con BT"
+      >
+        <Bot size={20} color="#818cf8" strokeWidth={1.75} />
+        {unreadAlerts > 0 && !chatOpen && (
+          <span style={{
+            position: 'absolute', top: '6px', right: '6px',
+            width: '16px', height: '16px', borderRadius: '50%',
+            background: '#f59e0b', border: '2px solid #091220',
+            fontSize: '9px', fontWeight: 700, color: '#000',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            {unreadAlerts > 9 ? '9+' : unreadAlerts}
+          </span>
+        )}
+      </button>
+      <style>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Header
@@ -322,11 +375,6 @@ export default function App() {
                 pausar={pausar}
                 configurarSimbolo={configurarSimbolo}
               />
-            </ErrorBoundary>
-          )}
-          {activeTab === 'CHAT' && (
-            <ErrorBoundary fallback="Error en el chat">
-              <ChatPanel />
             </ErrorBoundary>
           )}
           {activeTab === 'CONFIG' && (
