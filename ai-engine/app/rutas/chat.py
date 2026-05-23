@@ -24,6 +24,8 @@ from app.bt.memoria  import (
 from app.bt.cartera import (
     obtener_estado_cartera, calcular_riesgo, construir_contexto_cartera,
 )
+from app.bt.calibracion import calcular_calibracion, obtener_calibracion_por_simbolo
+from app.bt.historial import obtener_track_record_global
 
 router = APIRouter(prefix="/chat")
 
@@ -152,6 +154,22 @@ async def chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/rendimiento")
+async def rendimiento_bt():
+    """
+    Devuelve el rendimiento completo de BT: track record global, calibración
+    por bucket de conviction y desglose por símbolo.
+    """
+    global_tr  = obtener_track_record_global()
+    calibracion = calcular_calibracion()
+    por_simbolo = obtener_calibracion_por_simbolo()
+    return {
+        "track_record_global": global_tr,
+        "calibracion":         calibracion,
+        "por_simbolo":         por_simbolo,
+    }
 
 
 @router.get("/alertas")

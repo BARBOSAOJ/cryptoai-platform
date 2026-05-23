@@ -7,6 +7,7 @@ from app.config import logger
 from app.indicadores import obtener_velas_binance
 from app.analisis import realizar_analisis
 from app.bt.historial import guardar_prediccion, obtener_track_record
+from app.bt.rag import guardar_en_rag, actualizar_outcome_rag, buscar_similares, construir_contexto_rag
 
 
 async def _analizar_simbolo(symbol: str) -> tuple[str, dict | None]:
@@ -74,6 +75,15 @@ async def obtener_contexto_mercado(simbolos: list) -> tuple[str, dict]:
 
         guardar_prediccion(symbol, a["signal"], a["conviction_score"],
                            float(a["entry_price"]), a["confidence"])
+
+        # RAG: actualizar outcomes pendientes y guardar análisis actual
+        actualizar_outcome_rag(symbol, float(a["entry_price"]))
+        guardar_en_rag(symbol, a)
+
+        # Recuperar situaciones pasadas similares e incluirlas en el contexto
+        similares = buscar_similares(a, symbol)
+        if similares:
+            partes.append(construir_contexto_rag(similares, symbol))
 
     return "\n".join(partes), analisis_map
 

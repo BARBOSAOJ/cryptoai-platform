@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Zap, Shield, Database, Brain, Cpu, CheckCircle, XCircle, User, Lock } from 'lucide-react'
 import BacktestPanel from './BacktestPanel'
 import AdminPanel from './AdminPanel'
+import BtRendimientoPanel from './BtRendimientoPanel'
 import { userApi } from '../../api'
 
 interface SettingsProps {
@@ -252,6 +253,20 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
           <span style={activeBadgeStyle}>Activo</span>
         </div>
 
+      </div>
+
+      {/* ─── Rendimiento de BT ──────────────────────────────────────────── */}
+      <div style={{ marginTop: '24px' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <div style={sectionLabelStyle}>Rendimiento de BT</div>
+        <span style={{
+          fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: '#818cf8',
+          background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)',
+          padding: '2px 7px', borderRadius: '5px'
+        }}>RAG · Calibración</span>
+      </div>
+      <div style={{ background: '#091220', border: '1px solid #111e35', borderRadius: '12px', padding: '18px 16px' }}>
+        <BtRendimientoPanel />
       </div>
 
       <BacktestPanel />
