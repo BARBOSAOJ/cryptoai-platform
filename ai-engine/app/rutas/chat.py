@@ -40,110 +40,112 @@ async def chat_stream(
     body: MensajeChat,
     authorization: Optional[str] = Header(None),
 ):
+    # Solo operaciones rápidas en el handler — el preprocessing pesado va dentro
+    # del generator para que el cliente reciba el HTTP 200 en milisegundos.
     token   = authorization.replace("Bearer ", "").strip() if authorization else None
     user_id = extraer_user_id(token) if token else "anon"
 
-    es_nueva_sesion = len(body.historial or []) == 0
-    perfil = registrar_sesion(user_id) if es_nueva_sesion else obtener_perfil(user_id)
-
+    es_nueva_sesion = not body.historial
+    perfil   = registrar_sesion(user_id) if es_nueva_sesion else obtener_perfil(user_id)
     simbolos = detectar_simbolos(body.mensaje)
     perfil   = actualizar_perfil_desde_mensaje(user_id, body.mensaje, simbolos)
 
-    # Análisis de mercado y estado de cartera en paralelo
-    (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
-        obtener_contexto_mercado(simbolos),
-        obtener_estado_cartera(token),
-    )
-
-    riesgo          = calcular_riesgo(datos_cartera, datos_stats, perfil.get("riesgo"))
-    ctx_cartera     = construir_contexto_cartera(datos_cartera, datos_stats, riesgo)
-
-    # Detectar y ejecutar intención de trade si el usuario está autenticado
-    orden_resultado = None
-    if token:
-        intencion = detectar_intencion_trade(body.mensaje)
-        if intencion:
-            # Si el usuario no indicó importe, usar el tamaño óptimo de cartera
-            if not intencion.get("amount_usd") and riesgo.get("max_posicion", 0) > 0:
-                intencion["amount_usd"] = riesgo["max_posicion"]
-            sym = intencion["symbol"]
-            a   = analisis_map.get(sym)
-            if a:
-                resultado = await ejecutar_orden(
-                    symbol=sym,
-                    side=intencion["side"],
-                    amount_usd=intencion["amount_usd"],
-                    price=float(a["entry_price"]),
-                    signal=a.get("signal", "MANTENER"),
-                    confidence=a.get("confidence", "0%"),
-                    token=token,
-                )
-                orden_resultado = {**intencion, "price": float(a["entry_price"]), "resultado": resultado}
-
-    track_records = {sym: obtener_track_record(sym) for sym in analisis_map}
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-    ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
-    if ctx_memoria:
-        messages.append({"role": "system", "content": ctx_memoria})
-
-    if ctx_cartera:
-        messages.append({"role": "system", "content": ctx_cartera})
-
-    if es_nueva_sesion and user_id != "anon":
-        for t in obtener_turnos_sesion_anterior(user_id, n=4):
-            messages.append(t)
-
-    for h in (body.historial or [])[-8:]:
-        if h.get("role") in ("user", "assistant") and h.get("content"):
-            messages.append({"role": h["role"], "content": h["content"]})
-
-    user_content = body.mensaje
-    if contexto:
-        user_content += f"\n\n[Datos de mercado obtenidos automáticamente:{contexto}]"
-
-    user_content += construir_track_record_contexto(track_records)
-
-    if orden_resultado:
-        r      = orden_resultado["resultado"]
-        status = r["status"]
-        size   = round(orden_resultado["amount_usd"] / orden_resultado["price"], 8)
-        tipo   = "Compra" if orden_resultado["side"] == "BUY" else "Venta"
-        if status == 200:
-            user_content += (
-                f"\n\n[ORDEN EJECUTADA: {tipo} de {size} {orden_resultado['symbol']} "
-                f"a ${orden_resultado['price']} — Total: ${orden_resultado['amount_usd']:.2f}]"
-            )
-        elif status == 402:
-            user_content += "\n\n[ERROR EN ORDEN: Saldo insuficiente en la cartera virtual]"
-        else:
-            err = r["data"].get("error", "Error desconocido")
-            user_content += f"\n\n[ERROR EN ORDEN: {err}]"
-
-    messages.append({"role": "user", "content": user_content})
-    guardar_turno(user_id, "user", body.mensaje)
-
     async def generate():
-        respuesta_completa = []
+        respuesta_completa: list[str] = []
         try:
             import ollama
-            stream = ollama.chat(
+
+            # ── Ping inmediato — cliente sabe que BT está activo ──────────────
+            yield f"data: {json.dumps({'ping': True})}\n\n"
+
+            # ── Preprocessing en paralelo (dentro del stream) ─────────────────
+            (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
+                obtener_contexto_mercado(simbolos),
+                obtener_estado_cartera(token),
+            )
+
+            riesgo      = calcular_riesgo(datos_cartera, datos_stats, perfil.get("riesgo"))
+            ctx_cartera = construir_contexto_cartera(datos_cartera, datos_stats, riesgo)
+
+            # ── Orden de trading si se detecta intención ──────────────────────
+            orden_resultado = None
+            if token:
+                intencion = detectar_intencion_trade(body.mensaje)
+                if intencion:
+                    if not intencion.get("amount_usd") and riesgo.get("max_posicion", 0) > 0:
+                        intencion["amount_usd"] = riesgo["max_posicion"]
+                    sym = intencion["symbol"]
+                    a   = analisis_map.get(sym)
+                    if a:
+                        resultado = await ejecutar_orden(
+                            symbol=sym, side=intencion["side"],
+                            amount_usd=intencion["amount_usd"],
+                            price=float(a["entry_price"]),
+                            signal=a.get("signal", "MANTENER"),
+                            confidence=a.get("confidence", "0%"),
+                            token=token,
+                        )
+                        orden_resultado = {**intencion, "price": float(a["entry_price"]), "resultado": resultado}
+
+            # ── Construcción de mensajes ──────────────────────────────────────
+            track_records = {sym: obtener_track_record(sym) for sym in analisis_map}
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+            ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
+            if ctx_memoria:
+                messages.append({"role": "system", "content": ctx_memoria})
+            if ctx_cartera:
+                messages.append({"role": "system", "content": ctx_cartera})
+
+            if es_nueva_sesion and user_id != "anon":
+                for t in obtener_turnos_sesion_anterior(user_id, n=4):
+                    messages.append(t)
+
+            for h in (body.historial or [])[-8:]:
+                if h.get("role") in ("user", "assistant") and h.get("content"):
+                    messages.append({"role": h["role"], "content": h["content"]})
+
+            user_content = body.mensaje
+            if contexto:
+                user_content += f"\n\n[Datos de mercado:{contexto}]"
+            user_content += construir_track_record_contexto(track_records)
+
+            if orden_resultado:
+                r      = orden_resultado["resultado"]
+                status = r["status"]
+                size   = round(orden_resultado["amount_usd"] / orden_resultado["price"], 8)
+                tipo   = "Compra" if orden_resultado["side"] == "BUY" else "Venta"
+                if status == 200:
+                    user_content += (
+                        f"\n\n[ORDEN EJECUTADA: {tipo} de {size} {orden_resultado['symbol']} "
+                        f"a ${orden_resultado['price']} — Total: ${orden_resultado['amount_usd']:.2f}]"
+                    )
+                elif status == 402:
+                    user_content += "\n\n[ERROR EN ORDEN: Saldo insuficiente]"
+                else:
+                    user_content += f"\n\n[ERROR EN ORDEN: {r['data'].get('error', 'Error desconocido')}]"
+
+            messages.append({"role": "user", "content": user_content})
+            guardar_turno(user_id, "user", body.mensaje)
+
+            # ── Stream LLM ────────────────────────────────────────────────────
+            stream = await ollama.AsyncClient().chat(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
                 options={"temperature": 0.35, "num_predict": 512},
             )
-            for chunk in stream:
-                content = chunk['message']['content']
+            async for chunk in stream:
+                content = chunk["message"]["content"]
                 if content:
                     respuesta_completa.append(content)
                     yield f"data: {json.dumps({'content': content})}\n\n"
+
         except ImportError:
             yield f"data: {json.dumps({'content': 'Error: pip install ollama'})}\n\n"
         except Exception as e:
             logger.error(f"Error en chat stream: {e}")
-            yield f"data: {json.dumps({'content': 'Error conectando con Ollama. ¿Está ejecutándose? Prueba: ollama serve'})}\n\n"
+            yield f"data: {json.dumps({'content': 'Error conectando con Ollama. ¿Está ejecutándose?'})}\n\n"
         finally:
             if respuesta_completa:
                 guardar_turno(user_id, "assistant", "".join(respuesta_completa))

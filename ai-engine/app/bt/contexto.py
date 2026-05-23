@@ -2,20 +2,40 @@
 contexto.py — Obtención y formateo del contexto de mercado en tiempo real para BT.
 Los símbolos se analizan en paralelo con asyncio.gather para minimizar latencia.
 """
+import json
 import asyncio
-from app.config import logger
+from app.config import logger, redis_client
 from app.indicadores import obtener_velas_binance
 from app.analisis import realizar_analisis
 from app.bt.historial import guardar_prediccion, obtener_track_record
 from app.bt.rag import guardar_en_rag, actualizar_outcome_rag, buscar_similares, construir_contexto_rag
 
+_CACHE_TTL = 60   # segundos — equilibrio entre frescura y velocidad
+
 
 async def _analizar_simbolo(symbol: str) -> tuple[str, dict | None]:
+    # Intentar cache primero (~1ms vs 2-5s de Binance+LSTM)
+    if redis_client:
+        try:
+            cached = redis_client.get(f"bt:cache_analisis:{symbol}")
+            if cached:
+                return symbol, json.loads(cached)
+        except Exception:
+            pass
+
     try:
         data = obtener_velas_binance(symbol, limit=100)
         if len(data["prices"]) < 5:
             return symbol, None
         a = await realizar_analisis(symbol, data["prices"][-1], data["prices"], data["volumes"])
+
+        # Cachear resultado
+        if redis_client:
+            try:
+                redis_client.setex(f"bt:cache_analisis:{symbol}", _CACHE_TTL, json.dumps(a))
+            except Exception:
+                pass
+
         return symbol, a
     except Exception as e:
         logger.warning(f"Error obteniendo contexto para {symbol}: {e}")

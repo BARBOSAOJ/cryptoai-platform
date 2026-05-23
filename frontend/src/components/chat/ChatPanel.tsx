@@ -26,6 +26,7 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
   const [mensajes, setMensajes]     = useState<Mensaje[]>([])
   const [input, setInput]           = useState('')
   const [cargando, setCargando]     = useState(false)
+  const [analizando, setAnalizando] = useState(false)
   const [ollamaOk, setOllamaOk]    = useState<boolean | null>(null)
   const bottomRef                   = useRef<HTMLDivElement>(null)
   const inputRef                    = useRef<HTMLTextAreaElement>(null)
@@ -63,6 +64,7 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
     const userMsg: Mensaje = { role: 'user', content: msg, ts: new Date().toISOString() }
     setMensajes(prev => [...prev, userMsg])
     setCargando(true)
+    setAnalizando(false)
     setOllamaOk(null)
 
     const historial = mensajes.slice(-10).map(m => ({ role: m.role, content: m.content }))
@@ -104,7 +106,11 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
           if (data === '[DONE]') break
           try {
             const parsed = JSON.parse(data)
+            // Ping inicial: BT conectado, empieza a procesar
+            if (parsed.ping) { setAnalizando(true); continue }
             const chunk: string = parsed.content ?? ''
+            if (!chunk) continue
+            setAnalizando(false)
             setMensajes(prev => {
               const updated = [...prev]
               updated[updated.length - 1] = {
@@ -130,6 +136,7 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
       })
     } finally {
       setCargando(false)
+      setAnalizando(false)
       abortRef.current = null
       setTimeout(() => inputRef.current?.focus(), 50)
     }
@@ -267,9 +274,15 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
               }}>
                 {msg.content}
                 {msg.role === 'assistant' && cargando && i === mensajes.length - 1 && msg.content === '' && (
-                  <span style={{ display: 'inline-flex', gap: '3px', alignItems: 'center' }}>
-                    <span style={dotStyle(0)} /><span style={dotStyle(1)} /><span style={dotStyle(2)} />
-                  </span>
+                  analizando ? (
+                    <span style={{ fontSize: '10px', color: '#486080', fontFamily: 'JetBrains Mono, monospace', animation: 'pulse 1.5s infinite' }}>
+                      analizando mercado...
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', gap: '3px', alignItems: 'center' }}>
+                      <span style={dotStyle(0)} /><span style={dotStyle(1)} /><span style={dotStyle(2)} />
+                    </span>
+                  )
                 )}
               </div>
             </div>
