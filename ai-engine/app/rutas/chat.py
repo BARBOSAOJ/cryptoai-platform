@@ -76,7 +76,7 @@ async def chat_stream(
         for t in obtener_turnos_sesion_anterior(user_id, n=4):
             messages.append(t)
 
-    for h in (body.historial or [])[-10:]:
+    for h in (body.historial or [])[-8:]:
         if h.get("role") in ("user", "assistant") and h.get("content"):
             messages.append({"role": h["role"], "content": h["content"]})
 
@@ -113,7 +113,7 @@ async def chat_stream(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
-                options={"temperature": 0.7, "num_predict": 1024},
+                options={"temperature": 0.35, "num_predict": 512},
             )
             for chunk in stream:
                 content = chunk['message']['content']

@@ -38,22 +38,27 @@ def _guardar_estado(symbol: str, estado: dict) -> None:
 
 def _mensaje_bt(symbol: str, tipo: str, datos: dict) -> str:
     coin = symbol.replace("USDT", "")
+    precio = datos.get('precio', '?')
     if tipo == "señal_compra":
-        return (f"{coin} — señal de compra con conviction {datos['conviction']}. "
-                f"RSI {datos.get('rsi', '?')}, régimen {datos.get('regimen', '?')}. "
-                f"Precio: ${datos['precio']}.")
+        rsi = datos.get('rsi', '?')
+        reg = datos.get('regimen', '?')
+        return (f"{coin} · Señal de compra. Conviction {datos['conviction']}/100 — "
+                f"RSI {rsi}, régimen {reg}. Entrada en ${precio}.")
     if tipo == "señal_venta":
-        return (f"{coin} — señal de venta detectada. Conviction {datos['conviction']}. "
-                f"Precio: ${datos['precio']}.")
+        return (f"{coin} · Señal de venta. Conviction {datos['conviction']}/100. "
+                f"Precio actual: ${precio}. Considera cerrar posición.")
     if tipo == "fear_extremo":
-        return (f"El mercado ha entrado en {datos['clasificacion']} "
-                f"(Fear & Greed {datos['valor']}/100). "
-                f"Situación que suele preceder movimientos bruscos.")
+        val = datos['valor']
+        cls = datos['clasificacion']
+        nota = "Históricamente una zona de acumulación." if val <= 20 else "El mercado está eufórico. Precaución."
+        return (f"Fear & Greed en {val}/100 — {cls}. {nota}")
     if tipo == "movimiento_rapido":
-        signo = "+" if datos["cambio"] > 0 else ""
-        return (f"{coin} se ha movido un {signo}{datos['cambio']:.2f}% en poco tiempo. "
-                f"Precio actual: ${datos['precio']}.")
-    return f"Cambio detectado en {coin}."
+        cambio = datos["cambio"]
+        signo = "+" if cambio > 0 else ""
+        dir_ = "sube" if cambio > 0 else "cae"
+        return (f"{coin} {dir_} un {signo}{cambio:.2f}% en poco tiempo. "
+                f"Precio: ${precio}. Revisa tu posición.")
+    return f"{coin} — cambio detectado en el mercado."
 
 
 def publicar_alerta(user_ids: list, symbol: str, tipo: str,
