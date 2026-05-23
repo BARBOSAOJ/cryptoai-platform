@@ -21,6 +21,9 @@ from app.bt.memoria  import (
     actualizar_perfil_desde_mensaje, obtener_turnos_sesion_anterior,
     guardar_turno, construir_contexto_memoria,
 )
+from app.bt.cartera import (
+    obtener_estado_cartera, calcular_riesgo, construir_contexto_cartera,
+)
 
 router = APIRouter(prefix="/chat")
 
@@ -43,13 +46,24 @@ async def chat_stream(
 
     simbolos = detectar_simbolos(body.mensaje)
     perfil   = actualizar_perfil_desde_mensaje(user_id, body.mensaje, simbolos)
-    contexto, analisis_map = await obtener_contexto_mercado(simbolos)
+
+    # Análisis de mercado y estado de cartera en paralelo
+    (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
+        obtener_contexto_mercado(simbolos),
+        obtener_estado_cartera(token),
+    )
+
+    riesgo          = calcular_riesgo(datos_cartera, datos_stats, perfil.get("riesgo"))
+    ctx_cartera     = construir_contexto_cartera(datos_cartera, datos_stats, riesgo)
 
     # Detectar y ejecutar intención de trade si el usuario está autenticado
     orden_resultado = None
     if token:
         intencion = detectar_intencion_trade(body.mensaje)
         if intencion:
+            # Si el usuario no indicó importe, usar el tamaño óptimo de cartera
+            if not intencion.get("amount_usd") and riesgo.get("max_posicion", 0) > 0:
+                intencion["amount_usd"] = riesgo["max_posicion"]
             sym = intencion["symbol"]
             a   = analisis_map.get(sym)
             if a:
@@ -71,6 +85,9 @@ async def chat_stream(
     ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
     if ctx_memoria:
         messages.append({"role": "system", "content": ctx_memoria})
+
+    if ctx_cartera:
+        messages.append({"role": "system", "content": ctx_cartera})
 
     if es_nueva_sesion and user_id != "anon":
         for t in obtener_turnos_sesion_anterior(user_id, n=4):
