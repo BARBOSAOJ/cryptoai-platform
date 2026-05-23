@@ -1,4 +1,4 @@
-import { Search, Star, Wifi, WifiOff, AlertTriangle, Wallet, TrendingUp, LogOut } from 'lucide-react'
+import { Search, Star, Wifi, WifiOff, AlertTriangle, Wallet, TrendingUp, LogOut, Settings } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { apiClient, aiClient } from '../../api'
 
@@ -13,9 +13,10 @@ interface HeaderProps {
   /** Número de posiciones con precio <= stopLoss */
   stopAlertCount?: number
   onLogout?: () => void
+  onSettingsOpen?: () => void
 }
 
-export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth, walletBalance, stopAlertCount = 0, onLogout }: HeaderProps) {
+export default function Header({ currentSymbol, setCurrentSymbol, user, marketData, sseConnected, aiHealth, walletBalance, stopAlertCount = 0, onLogout, onSettingsOpen }: HeaderProps) {
   const [searchInput, setSearchInput]     = useState('')
   const [isOpen, setIsOpen]               = useState(false)
   const [saldoCartera, setSaldoCartera]   = useState<number | null>(walletBalance ?? null)
@@ -255,6 +256,15 @@ export default function Header({ currentSymbol, setCurrentSymbol, user, marketDa
         )}
         <span style={planTagStyle}>{user.plan}</span>
         <div style={avatarStyle}>{initials}</div>
+        {onSettingsOpen && (
+          <button onClick={onSettingsOpen} title="Configuración" style={{
+            width:'30px', height:'30px', borderRadius:'8px', border:'1px solid #1a2840',
+            background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+            color:'#486080', transition:'all 0.15s',
+          }}>
+            <Settings size={13} strokeWidth={1.75} />
+          </button>
+        )}
         {onLogout && (
           <button onClick={onLogout} title="Cerrar sesión" style={{
             width:'30px', height:'30px', borderRadius:'8px', border:'1px solid #1a2840',

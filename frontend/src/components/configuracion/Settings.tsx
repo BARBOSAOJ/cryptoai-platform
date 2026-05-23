@@ -85,12 +85,7 @@ export default function Settings({ setRefreshInterval, currentInterval, aiHealth
 
   return (
     <div style={wrapStyle}>
-      <div style={{ marginBottom: '28px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 4px' }}>Configuración</h2>
-        <p style={{ fontSize: '12px', color: '#2c4268', margin: 0 }}>Ajustes del terminal de trading</p>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '560px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 
         {/* ─── Mi perfil ──────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -298,8 +293,8 @@ function ModelBadge({ label, active }: { label: string; active: boolean | null }
 }
 
 const wrapStyle: React.CSSProperties = {
-  padding: '32px 36px', background: '#060d1a', height: '100%',
-  overflowY: 'auto', fontFamily: 'Inter, sans-serif', color: '#fff'
+  padding: '24px 28px', background: '#060d1a',
+  fontFamily: 'Inter, sans-serif', color: '#fff'
 }
 const sectionLabelStyle: React.CSSProperties = {
   fontSize: '9px', fontFamily: 'JetBrains Mono, monospace', color: '#1e3050',

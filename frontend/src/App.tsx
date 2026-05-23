@@ -8,6 +8,7 @@ import LoadingSplash from './components/shared/LoadingSplash'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import ChatPanel from './components/chat/ChatPanel'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
+import Settings from './components/configuracion/Settings'
 
 const MAIN_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'TRUMPUSDT', 'PEPEUSDT', 'DOGEUSDT', 'SHIBUSDT']
 
@@ -32,6 +33,7 @@ export default function App() {
   const [tradeHistory, setTradeHistory] = useState<any[]>([])
   const [refreshInterval, setRefreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]   = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const [dataError, setDataError]     = useState<string | null>(null)
   const [aiHealth, setAiHealth]       = useState<{ lstm: boolean; finbert: boolean } | null>(null)
@@ -282,6 +284,7 @@ const historyRef          = useRef<Record<string, number[]>>({})
         aiHealth={aiHealth}
         stopAlertCount={alertasStopLoss.size}
         onLogout={handleLogout}
+        onSettingsOpen={() => setShowSettings(true)}
       />
 
       {dataError && (
@@ -431,8 +434,43 @@ const historyRef          = useRef<Record<string, number[]>>({})
         </div>
       </div>
 
+      {/* ── Overlay de configuración ───────────────────────────────────── */}
+      {showSettings && (
+        <div
+          onClick={() => setShowSettings(false)}
+          style={{
+            position:'fixed', inset:0, zIndex:200,
+            background:'rgba(4,10,24,0.85)', backdropFilter:'blur(4px)',
+            display:'flex', alignItems:'flex-start', justifyContent:'flex-end',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width:'560px', height:'100%', background:'#060d1a',
+              borderLeft:'1px solid #111e35', overflowY:'auto',
+              animation:'slideIn 0.2s ease',
+            }}
+          >
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 24px 0', borderBottom:'1px solid #111e35', paddingBottom:'14px' }}>
+              <span style={{ fontSize:'11px', fontFamily:'JetBrains Mono, monospace', color:'#2c4268', letterSpacing:'2px', textTransform:'uppercase' }}>Configuración</span>
+              <button
+                onClick={() => setShowSettings(false)}
+                style={{ background:'none', border:'1px solid #1a2840', borderRadius:'7px', color:'#486080', cursor:'pointer', padding:'5px 10px', fontSize:'11px', fontFamily:'JetBrains Mono, monospace' }}
+              >ESC</button>
+            </div>
+            <Settings
+              setRefreshInterval={setRefreshInterval}
+              currentInterval={refreshInterval}
+              aiHealth={aiHealth}
+            />
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
       `}</style>
     </div>
   )
