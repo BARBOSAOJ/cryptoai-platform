@@ -35,6 +35,8 @@ TIMEFRAME_WEIGHTS = {"1m": 0.15, "15m": 0.25, "1h": 0.35, "4h": 0.25}
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ.setdefault('TRANSFORMERS_OFFLINE', '1')
+os.environ.setdefault('HF_HUB_OFFLINE', '1')
 
 _has_ml = False
 _has_nlp = False

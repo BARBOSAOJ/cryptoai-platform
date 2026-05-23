@@ -5,6 +5,7 @@ Inicializa FastAPI, registra routers y lanza tareas de fondo.
 import os
 import asyncio
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,26 +24,6 @@ from app.reentrenamiento    import _ciclo_reentrenamiento_automatico
 from app.config             import WARM_SYMBOLS, redis_client, logger
 from app.bt.historial       import evaluar_predicciones
 from app.bt.alertas         import evaluar_y_publicar, obtener_usuarios_activos
-
-# ─── App ──────────────────────────────────────────────────────────────────────
-
-app = FastAPI(title="Crypto AI Engine", version="4.0.0")
-
-_allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173').split(',')
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[o.strip() for o in _allowed_origins],
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
-)
-
-app.include_router(router_mercado)
-app.include_router(router_noticias)
-app.include_router(router_modelos)
-app.include_router(router_riesgo)
-app.include_router(router_sistema)
-app.include_router(router_chat)
 
 
 async def _ciclo_alertas_bt():
@@ -97,14 +78,36 @@ async def _lanzar_backtests_iniciales():
         await asyncio.sleep(2)
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     asyncio.create_task(precalentar_cache(WARM_SYMBOLS))
     asyncio.create_task(_ciclo_reentrenamiento_automatico())
     asyncio.create_task(_ciclo_calibracion_online())
     asyncio.create_task(_lanzar_backtests_iniciales())
     asyncio.create_task(_ciclo_evaluacion_bt())
     asyncio.create_task(_ciclo_alertas_bt())
+    yield
+
+
+# ─── App ──────────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Crypto AI Engine", version="4.0.0", lifespan=lifespan)
+
+_allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173').split(',')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _allowed_origins],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+app.include_router(router_mercado)
+app.include_router(router_noticias)
+app.include_router(router_modelos)
+app.include_router(router_riesgo)
+app.include_router(router_sistema)
+app.include_router(router_chat)
 
 
 if __name__ == "__main__":
