@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.config import logger
-from app.bt.config   import SYSTEM_PROMPT, BT_MODEL
+from app.bt.config   import BT_MODEL
 from app.bt.detectar import detectar_simbolos, detectar_intencion_trade
 from app.bt.contexto import obtener_contexto_mercado, construir_track_record_contexto
 from app.bt.ordenes  import ejecutar_orden
@@ -89,7 +89,8 @@ async def chat_stream(
 
             # ── Construcción de mensajes ──────────────────────────────────────
             track_records = {sym: obtener_track_record(sym) for sym in analisis_map}
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            # bt-base ya lleva el SYSTEM_PROMPT horneado — no se envía como token
+            messages = []
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
             if ctx_memoria:
