@@ -55,8 +55,23 @@ async def chat_stream(
         "exposición", "perdida", "ganancia", "p&l", "patrimonio", "btc", "eth",
         "compra", "vende", "operar", "invierto", "kelly", "riesgo",
     }
+    _PALABRAS_PANICO = {
+        "crash", "se hunde", "hundiendo", "pánico", "todo baja", "vendo todo",
+        "salgo", "catástrofe", "colapso", "desplome", "urgente", "ayuda",
+    }
+    _PALABRAS_FOMO = {
+        "cohete", "despegar", "ath", "todo sube", "perdiendo el tren",
+        "ya subió", "compro ahora", "entro ya", "antes que siga subiendo",
+    }
     _msg_lower = body.mensaje.lower()
     necesita_cartera = bool(simbolos) or any(p in _msg_lower for p in _PALABRAS_CARTERA)
+
+    if any(p in _msg_lower for p in _PALABRAS_PANICO):
+        estado_emocional = "[ESTADO DEL USUARIO: posible pánico. Responde primero con calma y datos fríos antes del análisis.]"
+    elif any(p in _msg_lower for p in _PALABRAS_FOMO):
+        estado_emocional = "[ESTADO DEL USUARIO: posible FOMO. Evalúa si la relación riesgo/recompensa sigue siendo válida y dilo con datos.]"
+    else:
+        estado_emocional = ""
 
     async def generate():
         respuesta_completa: list[str] = []
@@ -110,6 +125,8 @@ async def chat_stream(
                 messages.append({"role": "system", "content": ctx_memoria})
             if ctx_cartera:
                 messages.append({"role": "system", "content": ctx_cartera})
+            if estado_emocional:
+                messages.append({"role": "system", "content": estado_emocional})
 
             if es_nueva_sesion and user_id != "anon":
                 for t in obtener_turnos_sesion_anterior(user_id, n=4):
