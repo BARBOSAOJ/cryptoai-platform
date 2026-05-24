@@ -52,10 +52,9 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
 
     import torch
     from datasets import Dataset
-    from transformers import (AutoTokenizer, AutoModelForCausalLM,
-                              TrainingArguments, BitsAndBytesConfig)
+    from transformers import (AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig)
     from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
-    from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
+    from trl import SFTTrainer, SFTConfig
 
     from app.bt.entrenamiento.dataset import generar_dataset
 
@@ -87,14 +86,14 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
     log.info(f"Dataset listo: {len(dataset)} ejemplos")
 
     # ── Modelo ────────────────────────────────────────────────────────────────
-    model_kwargs = {"trust_remote_code": True, "torch_dtype": torch.float16 if cuda_ok else torch.float32}
+    model_kwargs = {"trust_remote_code": True, "torch_dtype": torch.bfloat16 if cuda_ok else torch.float32}
 
     if cuda_ok:
         bnb_cfg = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_compute_dtype=torch.bfloat16,
         )
         model_kwargs["quantization_config"] = bnb_cfg
         model_kwargs["device_map"]          = "auto"
@@ -123,7 +122,7 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
 
     # ── Entrenamiento ─────────────────────────────────────────────────────────
     os.makedirs(output, exist_ok=True)
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=output,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -131,8 +130,8 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
         learning_rate=lr,
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,
-        fp16=cuda_ok,
-        bf16=False,
+        fp16=False,
+        bf16=cuda_ok,
         logging_steps=10,
         save_strategy="epoch",
         save_total_limit=1,
@@ -140,14 +139,14 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
         dataloader_pin_memory=cuda_ok,
         gradient_checkpointing=cuda_ok,
         optim="adamw_torch_fused" if cuda_ok else "adamw_torch",
+        dataset_text_field="text",
+        max_length=640,
     )
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=dataset,
-        dataset_text_field="text",
-        max_seq_length=1024,
         args=training_args,
     )
 
@@ -170,7 +169,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fine-tune BT con LoRA")
     parser.add_argument("--base_model",  default=BASE_MODEL_DEFAULT)
     parser.add_argument("--epochs",      type=int,   default=3)
-    parser.add_argument("--n_ejemplos",  type=int,   default=800)
+    parser.add_argument("--n_ejemplos",  type=int,   default=1000)
     parser.add_argument("--output",      default=OUTPUT_DEFAULT)
     parser.add_argument("--lora_r",      type=int,   default=8)
     parser.add_argument("--lora_alpha",  type=int,   default=16)

@@ -25,17 +25,14 @@ LORA_DIR_DEFAULT    = "models/bt-lora"
 MERGED_DIR_DEFAULT  = "models/bt-merged"
 GGUF_DIR_DEFAULT    = "models/bt-gguf"
 MODEL_NAME_DEFAULT  = "bt-crypto"
-MODELFILE_PATH      = "Modelfile.bt"
+MODELFILE_PATH      = "Modelfile.bt-crypto"
 
-_SYSTEM_PROMPT_OLLAMA = """Eres BT, la inteligencia artificial de análisis financiero integrada en la plataforma CryptoAI.
+# Minimal system prompt — personality is baked into weights via fine-tuning.
+# Only language lock and format reminder stay here as a safety net.
+_SYSTEM_PROMPT_OLLAMA = """IDIOMA: Responde SIEMPRE en español. Jamás en inglés.
 
-Sofisticado, preciso y con un punto de ironía sutil cuando la situación lo permite. Hablas como un asesor financiero de primer nivel que además domina los datos técnicos al detalle. Nunca alarmista, nunca condescendiente.
-
-NORMAS:
-- Responde siempre en español
-- Sin saludos genéricos ni relleno. Ve al grano
-- Puedes ser ligeramente irónico si el mercado está en una situación obvia o absurda
-- Nunca uses lenguaje militar, bélico ni dramático"""
+Eres BT. Trader de prop desk con criterio propio. Sin introducciones, sin disclaimers, sin markdown excesivo.
+Formato con datos: símbolo · señal · Conviction N/100 en primera línea. Máximo 6 líneas."""
 
 
 def _check_deps():
@@ -82,7 +79,7 @@ def fusionar_lora(lora_dir: str, merged_dir: str) -> str:
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         device_map={"": "cpu"},
         trust_remote_code=True,
     )
@@ -100,61 +97,41 @@ def fusionar_lora(lora_dir: str, merged_dir: str) -> str:
 
 
 def convertir_a_gguf(merged_dir: str, gguf_dir: str) -> str:
-    """Convierte el modelo HF a formato GGUF (Q4_K_M)."""
+    """Convierte el modelo HF a formato GGUF (Q4_K_M) si llama.cpp está disponible.
+
+    Ollama 0.1.32+ acepta directamente el directorio safetensors via FROM,
+    así que si no hay llama.cpp simplemente devolvemos el directorio fusionado.
+    """
+    metodo = _check_llamacpp()
+    if metodo is None:
+        log.info("llama.cpp no encontrado — Ollama cargará el modelo HF directamente (safetensors).")
+        return merged_dir
+
     os.makedirs(gguf_dir, exist_ok=True)
     gguf_path = os.path.join(gguf_dir, "bt-crypto-q4_k_m.gguf")
 
-    metodo = _check_llamacpp()
-    if metodo is None:
-        log.warning("llama.cpp no encontrado. Instálalo con:")
-        log.warning("  pip install llama-cpp-python  (recomendado)")
-        log.warning("  o clona https://github.com/ggerganov/llama.cpp y compila")
-        log.warning(f"Saltando conversión GGUF. El modelo fusionado está en: {merged_dir}/")
-        log.warning("Puedes usar el modelo HF directamente en Ollama con --from si tu versión lo soporta.")
-        return merged_dir
+    # metodo es la ruta al script convert_hf_to_gguf.py
+    log.info(f"Convirtiendo con {metodo}...")
+    fp16_path = os.path.join(gguf_dir, "bt-crypto-f16.gguf")
+    subprocess.run([
+        sys.executable, metodo,
+        merged_dir,
+        "--outtype", "f16",
+        "--outfile", fp16_path,
+    ], check=True)
 
-    if metodo == "llama_cpp_python":
-        log.info("Convirtiendo a GGUF con llama-cpp-python...")
-        try:
-            from llama_cpp import llama_cpp
-            # llama-cpp-python no expone conversión directa; usamos su script si existe
-            raise ImportError("use script")
-        except Exception:
-            # Fallback: intentar con el script de llama.cpp si está en PATH
-            result = subprocess.run(
-                ["python", "-c",
-                 f"from llama_cpp.llama_cpp import llama_model_quantize; "
-                 f"print('llama_cpp_python no soporta conversión directa')"],
-                capture_output=True, text=True
-            )
-            log.warning("llama-cpp-python no incluye conversión HF→GGUF.")
-            log.warning("Instala llama.cpp manualmente para este paso.")
-            return merged_dir
+    log.info("Cuantizando a Q4_K_M...")
+    quantize_bin = os.path.join(os.path.dirname(metodo), "llama-quantize")
+    if not os.path.exists(quantize_bin):
+        quantize_bin = os.path.join(os.path.dirname(metodo), "build", "bin", "llama-quantize")
+    if os.path.exists(quantize_bin):
+        subprocess.run([quantize_bin, fp16_path, gguf_path, "Q4_K_M"], check=True)
+        os.remove(fp16_path)
+        log.info(f"GGUF cuantizado: {gguf_path}")
+        return gguf_path
     else:
-        # metodo es la ruta al script convert_hf_to_gguf.py
-        log.info(f"Convirtiendo con {metodo}...")
-        fp16_path = os.path.join(gguf_dir, "bt-crypto-f16.gguf")
-        subprocess.run([
-            sys.executable, metodo,
-            merged_dir,
-            "--outtype", "f16",
-            "--outfile", fp16_path,
-        ], check=True)
-
-        log.info("Cuantizando a Q4_K_M...")
-        quantize_bin = os.path.join(os.path.dirname(metodo), "llama-quantize")
-        if not os.path.exists(quantize_bin):
-            quantize_bin = os.path.join(os.path.dirname(metodo), "build", "bin", "llama-quantize")
-        if os.path.exists(quantize_bin):
-            subprocess.run([quantize_bin, fp16_path, gguf_path, "Q4_K_M"], check=True)
-            os.remove(fp16_path)
-            log.info(f"GGUF cuantizado: {gguf_path}")
-            return gguf_path
-        else:
-            log.warning("llama-quantize no encontrado, usando modelo f16 sin cuantizar.")
-            return fp16_path
-
-    return merged_dir
+        log.warning("llama-quantize no encontrado, usando f16 sin cuantizar.")
+        return fp16_path
 
 
 def crear_modelfile(gguf_path: str, modelfile_path: str = MODELFILE_PATH) -> None:
@@ -169,8 +146,8 @@ def crear_modelfile(gguf_path: str, modelfile_path: str = MODELFILE_PATH) -> Non
 
 SYSTEM \"\"\"{_SYSTEM_PROMPT_OLLAMA}\"\"\"
 
-PARAMETER temperature 0.7
-PARAMETER num_predict 1024
+PARAMETER temperature 0.35
+PARAMETER num_predict 512
 PARAMETER repeat_penalty 1.1
 PARAMETER top_p 0.9
 PARAMETER stop "<|end|>"
