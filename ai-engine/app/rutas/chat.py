@@ -50,6 +50,14 @@ async def chat_stream(
     simbolos = detectar_simbolos(body.mensaje)
     perfil   = actualizar_perfil_desde_mensaje(user_id, body.mensaje, simbolos)
 
+    _PALABRAS_CARTERA = {
+        "cartera", "portfolio", "posición", "posiciones", "saldo", "libre",
+        "exposición", "perdida", "ganancia", "p&l", "patrimonio", "btc", "eth",
+        "compra", "vende", "operar", "invierto", "kelly", "riesgo",
+    }
+    _msg_lower = body.mensaje.lower()
+    necesita_cartera = bool(simbolos) or any(p in _msg_lower for p in _PALABRAS_CARTERA)
+
     async def generate():
         respuesta_completa: list[str] = []
         try:
@@ -59,13 +67,18 @@ async def chat_stream(
             yield f"data: {json.dumps({'ping': True})}\n\n"
 
             # ── Preprocessing en paralelo (dentro del stream) ─────────────────
-            (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
-                obtener_contexto_mercado(simbolos),
-                obtener_estado_cartera(token),
-            )
-
-            riesgo      = calcular_riesgo(datos_cartera, datos_stats, perfil.get("riesgo"))
-            ctx_cartera = construir_contexto_cartera(datos_cartera, datos_stats, riesgo)
+            if necesita_cartera and token:
+                (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
+                    obtener_contexto_mercado(simbolos),
+                    obtener_estado_cartera(token),
+                )
+                riesgo      = calcular_riesgo(datos_cartera, datos_stats, perfil.get("riesgo"))
+                ctx_cartera = construir_contexto_cartera(datos_cartera, datos_stats, riesgo)
+            else:
+                contexto, analisis_map = await obtener_contexto_mercado(simbolos)
+                datos_cartera = datos_stats = {}
+                riesgo = {}
+                ctx_cartera = ""
 
             # ── Orden de trading si se detecta intención ──────────────────────
             orden_resultado = None
