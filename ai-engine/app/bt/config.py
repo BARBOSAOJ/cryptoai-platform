@@ -54,33 +54,199 @@ NORMAS ABSOLUTAS:
 - Sin lenguaje dramático ni militar
 - Sin saludos genéricos al inicio de cada mensaje"""
 
+# ── Mapa de símbolos ─────────────────────────────────────────────────────────
+# Incluye nombres oficiales, tickers, apodos y variantes ortográficas comunes.
 SYMBOL_MAP: dict[str, str] = {
-    'bitcoin':   'BTCUSDT',  'btc':      'BTCUSDT',
-    'ethereum':  'ETHUSDT',  'eth':      'ETHUSDT',  'ether':    'ETHUSDT',
-    'solana':    'SOLUSDT',  'sol':      'SOLUSDT',
-    'dogecoin':  'DOGEUSDT', 'doge':     'DOGEUSDT',
-    'ripple':    'XRPUSDT',  'xrp':      'XRPUSDT',
-    'bnb':       'BNBUSDT',  'binance':  'BNBUSDT',
-    'pepe':      'PEPEUSDT',
-    'shib':      'SHIBUSDT', 'shiba':    'SHIBUSDT',
-    'trump':     'TRUMPUSDT',
-    'cardano':   'ADAUSDT',  'ada':      'ADAUSDT',
-    'avalanche': 'AVAXUSDT', 'avax':     'AVAXUSDT',
-    'polkadot':  'DOTUSDT',  'dot':      'DOTUSDT',
-    'chainlink': 'LINKUSDT', 'link':     'LINKUSDT',
-    'polygon':   'MATICUSDT','matic':    'MATICUSDT',
-    'litecoin':  'LTCUSDT',  'ltc':      'LTCUSDT',
+    # ── Bitcoin ──────────────────────────────────────────────────────────────
+    'bitcoin':      'BTCUSDT', 'btc':       'BTCUSDT',
+    'bitcoins':     'BTCUSDT', 'bitcoincito':'BTCUSDT',
+    'la naranja':   'BTCUSDT', 'oro digital':'BTCUSDT',
+
+    # ── Ethereum ─────────────────────────────────────────────────────────────
+    'ethereum':     'ETHUSDT', 'eth':        'ETHUSDT',
+    'ether':        'ETHUSDT', 'ethereo':    'ETHUSDT',
+    'etherum':      'ETHUSDT', 'etherion':   'ETHUSDT',
+
+    # ── Solana ───────────────────────────────────────────────────────────────
+    'solana':       'SOLUSDT', 'sol':        'SOLUSDT',
+    'soly':         'SOLUSDT', 'solano':     'SOLUSDT',
+
+    # ── BNB / Binance ─────────────────────────────────────────────────────────
+    'bnb':          'BNBUSDT', 'binance':    'BNBUSDT',
+    'binance coin': 'BNBUSDT', 'bnbcoin':    'BNBUSDT',
+
+    # ── Ripple / XRP ─────────────────────────────────────────────────────────
+    'ripple':       'XRPUSDT', 'xrp':        'XRPUSDT',
+    'riple':        'XRPUSDT', 'rippl':      'XRPUSDT',
+
+    # ── Dogecoin ─────────────────────────────────────────────────────────────
+    'dogecoin':     'DOGEUSDT', 'doge':       'DOGEUSDT',
+    'dogeito':      'DOGEUSDT', 'el perro':   'DOGEUSDT',
+    'perro':        'DOGEUSDT',
+
+    # ── Shiba Inu ─────────────────────────────────────────────────────────────
+    'shib':         'SHIBUSDT', 'shiba':      'SHIBUSDT',
+    'shiba inu':    'SHIBUSDT', 'shibu':      'SHIBUSDT',
+    'shibacoin':    'SHIBUSDT',
+
+    # ── PEPE ─────────────────────────────────────────────────────────────────
+    'pepe':         'PEPEUSDT', 'pepecoin':   'PEPEUSDT',
+    'pepe the frog':'PEPEUSDT',
+
+    # ── Trump ─────────────────────────────────────────────────────────────────
+    'trump':        'TRUMPUSDT', 'trumpcoin': 'TRUMPUSDT',
+
+    # ── Cardano ──────────────────────────────────────────────────────────────
+    'cardano':      'ADAUSDT', 'ada':         'ADAUSDT',
+
+    # ── Avalanche ─────────────────────────────────────────────────────────────
+    'avalanche':    'AVAXUSDT', 'avax':       'AVAXUSDT',
+
+    # ── Polkadot ─────────────────────────────────────────────────────────────
+    'polkadot':     'DOTUSDT', 'dot':         'DOTUSDT',
+
+    # ── Chainlink ─────────────────────────────────────────────────────────────
+    'chainlink':    'LINKUSDT', 'link':       'LINKUSDT',
+
+    # ── Polygon ──────────────────────────────────────────────────────────────
+    'polygon':      'MATICUSDT', 'matic':     'MATICUSDT',
+    'pol':          'MATICUSDT',
+
+    # ── Litecoin ─────────────────────────────────────────────────────────────
+    'litecoin':     'LTCUSDT', 'ltc':         'LTCUSDT',
+
+    # ── Cosmos ───────────────────────────────────────────────────────────────
+    'cosmos':       'ATOMUSDT', 'atom':       'ATOMUSDT',
+
+    # ── NEAR Protocol ────────────────────────────────────────────────────────
+    'near':         'NEARUSDT', 'near protocol':'NEARUSDT',
+
+    # ── Tron ─────────────────────────────────────────────────────────────────
+    'tron':         'TRXUSDT', 'trx':         'TRXUSDT',
+
+    # ── Uniswap ──────────────────────────────────────────────────────────────
+    'uniswap':      'UNIUSDT', 'uni':         'UNIUSDT',
+
+    # ── Aave ─────────────────────────────────────────────────────────────────
+    'aave':         'AAVEUSDT',
+
+    # ── Render ───────────────────────────────────────────────────────────────
+    'render':       'RENDERUSDT', 'rndr':     'RENDERUSDT',
+
+    # ── Injective ─────────────────────────────────────────────────────────────
+    'injective':    'INJUSDT', 'inj':         'INJUSDT',
+
+    # ── Arbitrum ─────────────────────────────────────────────────────────────
+    'arbitrum':     'ARBUSDT', 'arb':         'ARBUSDT',
+
+    # ── Optimism ─────────────────────────────────────────────────────────────
+    'optimism':     'OPUSDT', 'op':           'OPUSDT',
+
+    # ── Sui ──────────────────────────────────────────────────────────────────
+    'sui':          'SUIUSDT',
+
+    # ── Aptos ────────────────────────────────────────────────────────────────
+    'aptos':        'APTUSDT', 'apt':         'APTUSDT',
+
+    # ── TON ──────────────────────────────────────────────────────────────────
+    'ton':          'TONUSDT', 'toncoin':     'TONUSDT',
+
+    # ── WIF (dogwifhat) ───────────────────────────────────────────────────────
+    'wif':          'WIFUSDT', 'dogwifhat':   'WIFUSDT', 'dogwif': 'WIFUSDT',
+
+    # ── Bonk ─────────────────────────────────────────────────────────────────
+    'bonk':         'BONKUSDT',
+
+    # ── Floki ────────────────────────────────────────────────────────────────
+    'floki':        'FLOKIUSDT',
+
+    # ── Jupiter ──────────────────────────────────────────────────────────────
+    'jupiter':      'JUPUSDT', 'jup':         'JUPUSDT',
+
+    # ── Worldcoin ─────────────────────────────────────────────────────────────
+    'worldcoin':    'WLDUSDT', 'wld':         'WLDUSDT',
+
+    # ── Notcoin ───────────────────────────────────────────────────────────────
+    'notcoin':      'NOTUSDT', 'not':         'NOTUSDT',
+
+    # ── Popcat ───────────────────────────────────────────────────────────────
+    'popcat':       'POPCATUSDT',
+
+    # ── Fantom ───────────────────────────────────────────────────────────────
+    'fantom':       'FTMUSDT', 'ftm':         'FTMUSDT',
+
+    # ── Sei ──────────────────────────────────────────────────────────────────
+    'sei':          'SEIUSDT',
 }
 
 _KNOWN_TICKERS = {s.replace('USDT', '') for s in SYMBOL_MAP.values()}
 
-_BUY_WORDS  = (
-    r'\b(compra|comprar|compro|comprame|'
+# ── Palabras de intención de compra ──────────────────────────────────────────
+_BUY_WORDS = (
+    r'\b('
+    # Comprar
+    r'compra|comprar|compro|comprame|cómprame|compramos|'
+    # Invertir
     r'invierte|invertir|invierto|invierteme|inverteme|invirtame|'
-    r'pon|ponme|meter|meteme|metame|'
-    r'entra|entrar|entro|'
-    r'buy|quiero\s+comprar|quiero\s+invertir)\b'
+    r'inviertelo|inviertela|inverti|invierta|invirtio|'
+    # Poner/meter
+    r'pon|ponme|ponlo|ponla|'
+    r'meter|meteme|metamo|metelo|meta|'
+    # Entrar
+    r'entra|entrar|entro|entrame|entrale|'
+    # Abrir posición
+    r'abre\s+posicion|abrir\s+posicion|abre\s+largo|abrir\s+largo|'
+    r'largo|ir\s+largo|'
+    # Adquirir
+    r'adquiere|adquirir|adquiero|adquiereme|'
+    # Tomar/agarrar
+    r'toma|tomar|tomo|tomame|'
+    r'agarra|agarrar|agarro|agarrame|'
+    # Coge (informal)
+    r'coge|coger|cojo|cogeme|'
+    # Executar
+    r'ejecuta|ejecutar|ejecuto|ejecutame|'
+    # Inglés
+    r'buy|long|'
+    # Frases compuestas
+    r'quiero\s+comprar|quiero\s+invertir|quiero\s+entrar|'
+    r'quiero\s+meter|quiero\s+poner|quiero\s+adquirir|'
+    r'dame\s+(?:un|una)?\s*posicion'
+    r')\b'
 )
-_SELL_WORDS = r'\b(vende|vender|vendo|cierra|cerrar|cierro|vendeme|sell)\b'
-# "$100", "100$", "100 dolares/dólares", "100 euros", "100 usd"
-_AMOUNT_RE  = r'\$\s*(\d+(?:[.,]\d+)?)|\b(\d+(?:[.,]\d+)?)\s*(?:\$|€|d[oó]lares?|euros?|usd)\b'
+
+# ── Palabras de intención de venta ────────────────────────────────────────────
+_SELL_WORDS = (
+    r'\b('
+    # Vender
+    r'vende|vender|vendo|vendeme|'
+    # Cerrar
+    r'cierra|cerrar|cierro|cierrame|'
+    # Salir
+    r'sale|salir|salgo|sal\s+de|salgame|'
+    # Liquidar
+    r'liquida|liquidar|liquido|liquidame|'
+    # Retirar/sacar
+    r'retira|retirar|retiro|retirame|'
+    r'saca|sacar|saco|sacame|'
+    # Quitar/deshacer
+    r'quita|quitar|quito|quitame|'
+    r'deshaz|deshacer|'
+    r'abandona|abandonar|abandono|'
+    # Corto
+    r'corto|short|ir\s+corto|abrir\s+corto|'
+    # Inglés
+    r'sell|'
+    # Frases
+    r'quiero\s+vender|quiero\s+cerrar|quiero\s+salir|'
+    r'quiero\s+liquidar'
+    r')\b'
+)
+
+# ── Regex de cantidad monetaria ───────────────────────────────────────────────
+# Soporta: $100, 100$, 100 dólares, 100 euros, 100 usd, 1k usd (= 1000)
+_AMOUNT_RE = (
+    r'\$\s*(\d+(?:[.,]\d+)?)'                          # $100 o $ 100
+    r'|\b(\d+(?:[.,]\d+)?)\s*k\b'                      # 1k, 2.5k (se multiplica por 1000 en código)
+    r'|\b(\d+(?:[.,]\d+)?)\s*(?:\$|€|d[oó]lares?|euros?|usd|usdt)\b'  # 100$ / 100 dolares / 100 usd
+)

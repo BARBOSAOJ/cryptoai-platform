@@ -41,8 +41,9 @@ def detectar_simbolos(texto: str) -> list[str]:
             encontrados.add(ticker + 'USDT')
 
     # Fuzzy fallback — ayuda con typos tipo "slana" → "solana"
+    # Requiere ≥5 chars para evitar que palabras comunes ("como") hagan match con nombres cortos
     if not encontrados:
-        palabras = re.findall(r'\b[a-z]{3,}\b', norm)
+        palabras = re.findall(r'\b[a-z]{5,}\b', norm)
         for palabra in palabras:
             matches = get_close_matches(palabra, SYMBOL_MAP.keys(), n=1, cutoff=0.78)
             if matches:
@@ -81,8 +82,13 @@ def detectar_intencion_trade(texto: str) -> Optional[dict]:
     m = re.search(_AMOUNT_RE, norm)
     if not m:
         return None
-    raw = m.group(1) or m.group(2)
+    # Grupos: 1=$100  2=Nk  3=N dolares/usd/€
+    raw = m.group(1) or m.group(2) or m.group(3)
+    if not raw:
+        return None
     amount_usd = float(raw.replace(',', '.'))
+    if m.group(2):          # sufijo 'k' → multiplicar por 1000
+        amount_usd *= 1000
     if amount_usd <= 0:
         return None
 

@@ -32,18 +32,46 @@ router = APIRouter(prefix="/chat")
 
 # ── Domain guardrail ──────────────────────────────────────────────────────────
 _FINANCE_KEYWORDS = {
+    # ── Tickers ───────────────────────────────────────────────────────────────
     "btc", "eth", "sol", "bnb", "xrp", "ada", "dot", "link", "matic", "avax",
-    "doge", "shib", "pepe", "trump",
-    "bitcoin", "ethereum", "solana", "crypto", "token", "defi", "nft", "blockchain",
-    "binance", "coinbase", "altcoin", "staking", "wallet",
-    "mercado", "precio", "señal", "compra", "vende", "vendo", "invierto", "invert",
-    "cartera", "portfolio", "posición", "posiciones", "saldo", "exposición",
-    "rsi", "macd", "indicador", "análisis", "trading", "trader", "stop", "entrada",
-    "kelly", "riesgo", "conviction", "soporte", "resistencia", "tendencia",
-    "inflación", "fed", "tipos", "dólar", "euro", "oro", "bolsa", "nasdaq",
-    "fear", "greed", "sentimiento", "bull", "bear", "corrección", "rebote",
-    "largo", "corto", "breakout", "volumen", "liquidez", "apalancamiento",
-    "patrimonio", "ganancia", "pérdida", "p&l", "rentabilidad",
+    "doge", "shib", "pepe", "trump", "ltc", "trx", "uni", "aave", "inj",
+    "rndr", "render", "popcat", "floki", "atom", "near", "bonk",
+    # ── Nombres completos ─────────────────────────────────────────────────────
+    "bitcoin", "ethereum", "solana", "binance", "coinbase", "ripple",
+    "dogecoin", "cardano", "avalanche", "polkadot", "chainlink", "polygon",
+    "litecoin", "cosmos", "tron", "uniswap", "injective", "arbitrum",
+    "optimism", "aptos", "toncoin", "worldcoin", "notcoin", "fantom",
+    "jupiter", "floki", "popcat", "bonk",
+    # ── Conceptos cripto ──────────────────────────────────────────────────────
+    "crypto", "cripto", "criptomoneda", "criptomonedas",
+    "token", "tokens", "defi", "nft", "blockchain", "altcoin", "altcoins",
+    "staking", "wallet", "exchange", "memecoin", "memecoins",
+    "halving", "pump", "dump", "rugpull", "airdrop", "whitepaper",
+    # ── Mercado y precio ──────────────────────────────────────────────────────
+    "mercado", "precio", "precios", "cotizacion", "cotizaciones",
+    "señal", "senal", "compra", "vende", "vendo", "invierto", "invertir",
+    "inversion", "inversión",
+    # ── Cartera / posiciones ──────────────────────────────────────────────────
+    "cartera", "portfolio", "posicion", "posición", "posiciones",
+    "saldo", "exposicion", "exposición", "patrimonio", "capital",
+    "ganancia", "ganancias", "perdida", "pérdida", "perdidas",
+    "p&l", "rentabilidad", "rendimiento",
+    # ── Indicadores técnicos ──────────────────────────────────────────────────
+    "rsi", "macd", "indicador", "indicadores", "analisis", "análisis",
+    "soporte", "resistencia", "tendencia", "volumen", "liquidez",
+    "bollinger", "ema", "sma", "vela", "velas", "candlestick",
+    "grafica", "gráfica", "chart", "grafico", "gráfico",
+    # ── Trading ───────────────────────────────────────────────────────────────
+    "trading", "trader", "stop", "stoploss", "stop loss", "take profit",
+    "entrada", "salida", "setup", "breakout", "breakdown",
+    "kelly", "riesgo", "conviction",
+    "largo", "corto", "long", "short", "apalancamiento",
+    # ── Macro ─────────────────────────────────────────────────────────────────
+    "inflacion", "inflación", "fed", "tipos", "dolar", "dólar",
+    "euro", "oro", "bolsa", "nasdaq", "sp500",
+    # ── Sentimiento ───────────────────────────────────────────────────────────
+    "fear", "greed", "sentimiento", "bull", "bear",
+    "correccion", "corrección", "rebote", "fomo", "panico", "pánico",
 }
 _OFFTOPIC_KEYWORDS = {
     "receta", "cocinar", "cocina", "pasta", "arroz", "pollo", "cena", "almuerzo",
@@ -60,13 +88,75 @@ _OFFTOPIC_KEYWORDS = {
 
 
 _NAV_RE = _re.compile(
-    r'\b(gr[aá]fica|gr[aá]fico|chart|pon(?:me)?|cambi[ao]|mu[eé]strame|muestrame|visualiza|mostrar|ver)\b',
-    _re.I,
+    r"""
+    \b(
+      # ── mostrar / enseñar ─────────────────────────────────────────────────
+      mu[eé]stra(?:me(?:lo|la|nos)?|lo|la|nos)?   # muéstrame, muestramelo, muestrala…
+      |ens[eé][nñ]a(?:me(?:lo|la)?|lo|la|nos?)?   # enséñame, enséñamelo, enséñanos
+      |ens[eé][nñ]amelo|ens[eé][nñ]amela
+
+      # ── ver ───────────────────────────────────────────────────────────────
+      |ver?lo|verla|verlo                          # verlo, verla
+      |vamos\s+a\s+ver                             # vamos a ver
+      |quiero\s+ver                                # quiero ver
+      |d[eé]jame\s+ver                             # déjame ver
+      |veamos|echemos\s+un\s+vistazo               # veamos, echemos un vistazo
+
+      # ── mirar ─────────────────────────────────────────────────────────────
+      |m[ií]ra(?:me(?:lo|la)?|lo|la)?             # míralo, míramelo, mira
+      |[eé]chale?\s+un\s+ojo                       # échale un ojo
+      |[eé]chamosle?\s+un\s+ojo
+
+      # ── abrir ─────────────────────────────────────────────────────────────
+      |abr(?:e(?:lo|la|me(?:lo|la)?)?|ir(?:lo|la)?) # abre, ábrelo, ábreme la, abrirlo
+      |abre\s+(?:la\s+)?(?:gr[aá]fica|chart|gr[aá]fico|pantalla)
+
+      # ── poner / cambiar ───────────────────────────────────────────────────
+      |pon(?:me(?:\s+en)?(?:lo|la)?|lo|la)?       # pon, ponme, ponmelo, ponla
+      |ponme\s+(?:en\s+)?(?:la\s+)?(?:gr[aá]fica|chart)
+      |cambi[ao](?:\s+a)?                          # cambia, cambio a
+      |cambiar\s+a                                 # cambiar a
+      |switch(?:ea?)?(?:\s+a)?                     # switch, switchea a
+      |pasa(?:me)?\s+a?                            # pasa a, pásame a
+
+      # ── cargar / traer ────────────────────────────────────────────────────
+      |carg(?:a(?:me(?:lo|la)?|lo|la)?|ar(?:lo|la)?)  # carga, cárgame, cárgala
+      |carga\s+(?:la\s+)?(?:gr[aá]fica|chart)
+      |tr[aá]e(?:me(?:lo|la)?|lo|la)?             # trae, tráeme, tráemelo
+      |trae\s+(?:la\s+)?(?:gr[aá]fica|chart)
+
+      # ── sacar / meter en pantalla ─────────────────────────────────────────
+      |s[aá]ca(?:me(?:lo|la)?|lo|la)?             # saca, sácame, sácamelo
+      |s[aá]ca\s+(?:la\s+)?(?:gr[aá]fica|chart)
+      |pon(?:me)?\s+(?:en\s+)?pantalla             # pon en pantalla
+
+      # ── ir a ──────────────────────────────────────────────────────────────
+      |ir\s+a|ve\s+a|vete\s+a                      # ir a, ve a, vete a
+      |llev[aá]me\s+a                              # llévame a
+
+      # ── nouns solos (basta con mencionar gráfica+símbolo) ─────────────────
+      |gr[aá]fic[ao]s?                             # gráfica, gráfico, gráficas
+      |chart                                        # chart
+      |velas?(?:\s+japonesas?)?                    # vela, velas japonesas
+      |candel(?:a|as)?s?                           # candela, candelas
+      |candle(?:stick)?s?                          # candle, candlestick
+      |visualiza(?:r(?:lo|la)?|lo|la)?             # visualiza, visualizarlo
+      |mostrar?(?:lo|la|me(?:lo|la)?)?             # mostrar, mostrarlo, mostrame
+      |representar?                                 # representa
+
+      # ── frases de demanda directa ─────────────────────────────────────────
+      |d[aá]me\s+(?:la\s+)?(?:gr[aá]fica|chart|el\s+gr[aá]fico)
+      |quiero\s+(?:la\s+)?(?:gr[aá]fica|el\s+chart|el\s+gr[aá]fico)
+      |necesito\s+(?:la\s+)?(?:gr[aá]fica|el\s+chart)
+    )\b
+    """,
+    _re.I | _re.X,
 )
 
 def _accion_ui(mensaje: str, simbolos: list) -> dict | None:
     """Si el mensaje pide ver un activo en el chart, devuelve el evento de acción UI."""
-    if simbolos and _NAV_RE.search(mensaje):
+    from app.bt.detectar import _normalizar
+    if simbolos and _NAV_RE.search(_normalizar(mensaje)):
         return {"action": "change_symbol", "symbol": simbolos[0]}
     return None
 
