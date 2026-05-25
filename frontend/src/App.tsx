@@ -494,7 +494,11 @@ export default function App() {
         {/* ── RIGHT: BT chat ──────────────────────────────────────────────── */}
         <div style={{ width:400, flexShrink:0, borderLeft:'1px solid var(--border)' }}>
           <ErrorBoundary fallback="Error en BT">
-            <ChatPanel />
+            <ChatPanel
+              onAction={(a) => {
+                if (a.action === 'change_symbol' && a.symbol) setCurrentSymbol(a.symbol)
+              }}
+            />
           </ErrorBoundary>
         </div>
       </div>

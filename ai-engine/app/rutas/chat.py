@@ -4,6 +4,7 @@ Delega toda la lógica de negocio en los módulos app.bt.*.
 """
 import json
 import asyncio
+import re as _re
 from fastapi import APIRouter, Header, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -56,6 +57,18 @@ _OFFTOPIC_KEYWORDS = {
     "traducción", "traduce al", "en inglés", "en francés",
     "poema", "redacción", "ensayo literario",
 }
+
+
+_NAV_RE = _re.compile(
+    r'\b(gr[aá]fica|gr[aá]fico|chart|pon(?:me)?|cambi[ao]|mu[eé]strame|muestrame|visualiza|mostrar|ver)\b',
+    _re.I,
+)
+
+def _accion_ui(mensaje: str, simbolos: list) -> dict | None:
+    """Si el mensaje pide ver un activo en el chart, devuelve el evento de acción UI."""
+    if simbolos and _NAV_RE.search(mensaje):
+        return {"action": "change_symbol", "symbol": simbolos[0]}
+    return None
 
 
 def _es_consulta_financiera(mensaje: str) -> bool:
@@ -117,6 +130,11 @@ async def chat_stream(
 
             # ── Ping inmediato — cliente sabe que BT está activo ──────────────
             yield f"data: {json.dumps({'ping': True})}\n\n"
+
+            # ── Acción UI (cambia símbolo en el chart si procede) ─────────────
+            ui_action = _accion_ui(body.mensaje, simbolos)
+            if ui_action:
+                yield f"data: {json.dumps(ui_action)}\n\n"
 
             # ── Guardrail de dominio ──────────────────────────────────────────
             if not _es_consulta_financiera(body.mensaje):
@@ -189,11 +207,15 @@ async def chat_stream(
                 yield f"data: {json.dumps({'content': header_text + chr(10)})}\n\n"
 
             # ── Construcción de mensajes para el LLM ──────────────────────────
+            if ui_action and analisis_map:
+                llm_instruccion = "Ya cambiaste el gráfico al activo pedido. Confirma en una frase e incluye el dato más relevante del mercado ahora mismo."
+            elif analisis_map:
+                llm_instruccion = "Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
+            else:
+                llm_instruccion = "Para saludos o preguntas generales: responde en una sola línea, directo."
+
             messages = [{"role": "system", "content": (
-                "Sin markdown. Sin bullets. Sin saludos. Responde en español. "
-                + ("Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
-                   if analisis_map else
-                   "Para saludos o preguntas generales: responde en una sola línea, directo.")
+                "Sin markdown. Sin bullets. Sin saludos. Responde en español. " + llm_instruccion
             )}]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)

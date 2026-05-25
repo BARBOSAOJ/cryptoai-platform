@@ -82,11 +82,18 @@ async def obtener_contexto_mercado(simbolos: list) -> tuple[str, dict]:
         rd_score  = rd.get('sentimiento', 0.0)
         rd_posts  = rd.get('posts_analizados', 0)
 
+        try:
+            lstm_dir = ("alcista" if float(a['predicted_next']) > float(a['entry_price'])
+                        else "bajista" if float(a['predicted_next']) < float(a['entry_price'])
+                        else "neutral")
+        except Exception:
+            lstm_dir = "neutral"
+        lstm_str = f"LSTM: {lstm_dir}" if a['lstm_active'] else "LSTM: inactivo"
+
         partes.append(
             f"\n[{symbol}] ${a['entry_price']} · {a['signal']} · Conviction {a['conviction_score']}/100"
-            f" · LSTM {'✓' if a['lstm_active'] else '✗'}\n"
-            f"Predicción: ${a['predicted_next']} · RSI {rsi_val} · MACD {macd_val}"
-            f" · BB {bb_pos} · EMA {ema_cross}\n"
+            f" · {lstm_str}\n"
+            f"RSI {rsi_val} · MACD {macd_val} · BB {bb_pos} · EMA {ema_cross}\n"
             f"Régimen: {regimen} · ADX {adx_val} · Técnico: {a['tech_impact']}"
             f" · FinBERT: {a['news_impact']}\n"
             f"F&G: {fg_val}/100 ({fg_cls}) · Reddit ({rd_posts}p): {rd_cls} ({rd_score:+.2f})\n"

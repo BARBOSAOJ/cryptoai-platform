@@ -10,9 +10,16 @@ interface Mensaje {
   urgencia?: number
 }
 
+interface BtAction {
+  action: string
+  symbol?: string
+  to?: string
+}
+
 interface ChatPanelProps {
   onClose?: () => void
   onNewAlert?: () => void
+  onAction?: (action: BtAction) => void
 }
 
 const SUGERENCIAS = [
@@ -34,7 +41,7 @@ const suggestVariants = {
   show:   (i: number) => ({ opacity: 1, x: 0, transition: { delay: i * 0.05, duration: 0.2 } }),
 }
 
-export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
+export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelProps) {
   const [mensajes, setMensajes]     = useState<Mensaje[]>([])
   const [input, setInput]           = useState('')
   const [cargando, setCargando]     = useState(false)
@@ -156,6 +163,7 @@ export default function ChatPanel({ onClose, onNewAlert }: ChatPanelProps) {
           try {
             const parsed = JSON.parse(data)
             if (parsed.ping) { setAnalizando(true); continue }
+            if (parsed.action) { onAction?.(parsed); continue }
             const chunk: string = parsed.content ?? ''
             if (!chunk) continue
             setAnalizando(false)
