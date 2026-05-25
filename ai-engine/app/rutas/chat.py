@@ -267,8 +267,7 @@ async def chat_stream(
 
 @router.get("/inicio")
 async def chat_inicio(authorization: Optional[str] = Header(None)):
-    """Briefing proactivo de apertura — formato directo desde datos de mercado, sin LLM.
-    No bloquea Ollama ni añade latencia al primer mensaje del usuario."""
+    """Briefing proactivo de apertura — saludo personalizado + estado del mercado, sin LLM."""
     token   = authorization.replace("Bearer ", "").strip() if authorization else None
     user_id = extraer_user_id(token) if token else "anon"
 
@@ -276,39 +275,75 @@ async def chat_inicio(authorization: Optional[str] = Header(None)):
         try:
             yield f"data: {json.dumps({'ping': True})}\n\n"
 
+            perfil = obtener_perfil(user_id)
+            nombre = (perfil.get("nombre", "") or "").strip() if perfil else ""
+            saludo_nombre = f", {nombre}" if nombre else ""
+
             _, analisis_map = await obtener_contexto_mercado(["BTCUSDT", "ETHUSDT", "SOLUSDT"])
 
-            lineas: list[str] = []
+            lineas_datos: list[str] = []
+            señales: list[str]      = []
+            convictions: list[int]  = []
+
             for sym in ["BTCUSDT", "ETHUSDT", "SOLUSDT"]:
                 a = analisis_map.get(sym)
                 if not a:
                     continue
-                ind = a.get("indicators", {})
-                rsi = ind.get("rsi")
+                ind     = a.get("indicators", {})
+                rsi     = ind.get("rsi")
                 rsi_str = f" · RSI {rsi:.0f}" if rsi is not None else ""
-                lineas.append(
+                lineas_datos.append(
                     f"{sym} ${float(a['entry_price']):,.2f} · {a['signal']} · "
                     f"Conviction {a['conviction_score']}/100{rsi_str}"
                 )
+                señales.append(a["signal"])
+                convictions.append(int(a["conviction_score"]))
 
-            # Añade nota de sentimiento o nivel clave basada en BTC
-            btc = analisis_map.get("BTCUSDT")
-            if btc:
-                fg_val = btc.get("fear_greed", {}).get("valor")
-                fg_cls = btc.get("fear_greed", {}).get("clasificacion", "")
-                if fg_val is not None:
-                    fg_int = int(fg_val)
-                    if fg_int <= 25:
-                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}) — zona de capitulación histórica.")
-                    elif fg_int >= 75:
-                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}) — euforia. Riesgo de reversión.")
-                    else:
-                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}).")
+            # Fear & Greed
+            btc    = analisis_map.get("BTCUSDT")
+            fg_val = btc.get("fear_greed", {}).get("valor")        if btc else None
+            fg_cls = btc.get("fear_greed", {}).get("clasificacion", "") if btc else ""
+            fg_nota = ""
+            if fg_val is not None:
+                fg_int = int(fg_val)
+                if fg_int <= 25:
+                    fg_nota = f" F&G {fg_int}/100 — zona de capitulación."
+                elif fg_int >= 75:
+                    fg_nota = f" F&G {fg_int}/100 — euforia, riesgo de reversión."
+                else:
+                    fg_nota = f" F&G {fg_int}/100 ({fg_cls})."
 
-            briefing = "\n".join(lineas) if lineas else "Datos de mercado no disponibles ahora mismo."
+            # Tono general del mercado
+            avg_conv    = sum(convictions) / len(convictions) if convictions else 50
+            buy_count   = sum(1 for s in señales if "COMPRAR" in s or "COMPRA" in s)
+            sell_count  = sum(1 for s in señales if "VENDER" in s or "VENTA" in s)
+            max_buy_conv = max(
+                (c for s, c in zip(señales, convictions) if "COMPRAR" in s or "COMPRA" in s),
+                default=0,
+            )
+
+            if buy_count >= 2 and avg_conv >= 60:
+                tono_intro = "mercado abierto para invertir"
+                conclusion = f"{buy_count} de {len(señales)} activos con señal de compra y conviction sólida. Momento operativo."
+            elif sell_count >= 2:
+                tono_intro = "mercado bajo presión"
+                conclusion = "Señales bajistas dominantes. Evita entradas largas hasta confirmación."
+            elif buy_count >= 1 and max_buy_conv >= 60:
+                tono_intro = "oportunidades selectivas"
+                conclusion = "Hay setup en activos concretos. Revisa los que muestran COMPRAR antes de entrar."
+            elif sell_count == 0 and avg_conv >= 50:
+                tono_intro = "mercado en espera"
+                conclusion = "Sin señal clara aún. Espera confirmación de volumen o ruptura de nivel."
+            else:
+                tono_intro = "mercado sin dirección"
+                conclusion = "Sin setup operativo. Mantén posiciones o reduce exposición."
+
+            intro    = f"Buenas{saludo_nombre}. {tono_intro.capitalize()} —{fg_nota}"
+            briefing = "\n".join([intro] + lineas_datos + [conclusion])
+
             yield f"data: {json.dumps({'content': briefing})}\n\n"
 
-            if briefing and user_id != "anon":
+            if user_id != "anon":
                 guardar_turno(user_id, "assistant", briefing)
 
         except Exception as e:

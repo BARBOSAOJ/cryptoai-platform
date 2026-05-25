@@ -13,11 +13,10 @@ class IndicadoresTecnicos:
     @staticmethod
     def rsi(data, window: int = 14):
         if not _has_ml: return data['Close'] * 0
-        import pandas as pd
         delta = data['Close'].diff()
-        gain  = delta.where(delta > 0, 0).rolling(window).mean()
-        loss  = (-delta.where(delta < 0, 0)).rolling(window).mean()
-        return 100 - (100 / (1 + gain / loss))
+        gain  = delta.where(delta > 0, 0).ewm(alpha=1/window, adjust=False).mean()
+        loss  = (-delta.where(delta < 0, 0)).ewm(alpha=1/window, adjust=False).mean()
+        return 100 - (100 / (1 + gain / (loss + 1e-9)))
 
     @staticmethod
     def stoch_rsi(data, rsi_window: int = 14, stoch_window: int = 14):
