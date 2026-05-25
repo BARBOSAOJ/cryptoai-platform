@@ -179,4 +179,48 @@ describe('ChatPanel', () => {
     const closeBtn = document.querySelector('button[style*="border: 1px solid"]')
     expect(closeBtn).toBeTruthy()
   })
+
+  it('fires onAction callback when SSE emits action event', async () => {
+    const onAction = vi.fn()
+    mockFetch
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
+      .mockResolvedValueOnce(makeSseResponse([
+        'data: {"ping":true}\n\n',
+        'data: {"action":"change_symbol","symbol":"SOLUSDT"}\n\n',
+        'data: {"content":"Aquí tienes el gráfico de Solana."}\n\n',
+        'data: [DONE]\n\n',
+      ]))
+
+    render(<ChatPanel onAction={onAction} />)
+    const textarea = screen.getByPlaceholderText(/pregunta/i)
+    fireEvent.change(textarea, { target: { value: 'pon la gráfica de solana' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    await waitFor(() => {
+      expect(onAction).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'change_symbol', symbol: 'SOLUSDT' })
+      )
+    })
+  })
+
+  it('action events are not rendered as chat text', async () => {
+    mockFetch
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
+      .mockResolvedValueOnce(makeSseResponse([
+        'data: {"action":"change_symbol","symbol":"ETHUSDT"}\n\n',
+        'data: {"content":"ETH en $2000"}\n\n',
+        'data: [DONE]\n\n',
+      ]))
+
+    render(<ChatPanel onAction={vi.fn()} />)
+    const textarea = screen.getByPlaceholderText(/pregunta/i)
+    fireEvent.change(textarea, { target: { value: 'muéstrame ETH' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    await waitFor(() => {
+      expect(screen.getByText(/ETH en \$2000/i)).toBeInTheDocument()
+    })
+    // action payload should not appear as raw text
+    expect(screen.queryByText(/change_symbol/i)).not.toBeInTheDocument()
+  })
 })
