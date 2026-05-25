@@ -46,7 +46,7 @@ def _check_deps():
 
 def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
              lora_r: int = 8, lora_alpha: int = 16, batch_size: int = 2,
-             grad_accum: int = 4, lr: float = 2e-4) -> None:
+             grad_accum: int = 4, lr: float = 5e-5) -> None:
 
     _check_deps()
 
@@ -150,8 +150,20 @@ def entrenar(base_model: str, n_ejemplos: int, epochs: int, output: str,
         args=training_args,
     )
 
+    # Resume from checkpoint if one exists (allows continuing interrupted training)
+    resume_ckpt = None
+    ckpts = sorted([d for d in os.listdir(output) if d.startswith("checkpoint-")]) if os.path.exists(output) else []
+    if ckpts:
+        resume_ckpt = os.path.join(output, ckpts[-1])
+        log.info(f"Reanudando desde checkpoint: {resume_ckpt}")
+
+    # Offline mode: evita requests HTTP de HuggingFace durante el guardado
+    # de checkpoints en contexto multi-thread (causa deadlock entre epochs)
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
+
     log.info("Iniciando entrenamiento...")
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_ckpt)
 
     log.info(f"Guardando adaptadores LoRA en {output}/...")
     trainer.model.save_pretrained(output)
@@ -175,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--lora_alpha",  type=int,   default=16)
     parser.add_argument("--batch_size",  type=int,   default=2)
     parser.add_argument("--grad_accum",  type=int,   default=4)
-    parser.add_argument("--lr",          type=float, default=2e-4)
+    parser.add_argument("--lr",          type=float, default=5e-5)
     args = parser.parse_args()
 
     entrenar(

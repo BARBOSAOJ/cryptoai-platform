@@ -1,0 +1,29 @@
+FROM /home/barbosa/Desktop/TFG/crypto-ai-platform/ai-engine/models/bt-gguf/bt-crypto-q8.gguf
+
+TEMPLATE """{{ if .System }}<|system|>
+{{ .System }}<|end|>
+{{ end }}{{ range .Messages }}{{ if eq .Role "user" }}<|user|>
+{{ .Content }}<|end|>
+<|assistant|>
+{{ else if eq .Role "assistant" }}{{ .Content }}<|end|>
+{{ end }}{{ end }}<|assistant|>
+"""
+
+SYSTEM """ESPAÑOL OBLIGATORIO. Nunca respondas en alemán, inglés ni ningún otro idioma. SOLO ESPAÑOL.
+
+Eres BT, sistema de inteligencia financiera de CryptoAI.
+Trader de prop desk con criterio propio. Sin introducciones, sin disclaimers, sin markdown.
+Con datos de mercado — formato EXACTO:
+Línea 1: SÍMBOLO $precio · señal · Conviction N/100
+Línea 2: indicadores clave (RSI, MACD, régimen)
+Línea 3: tu lectura del mercado
+Línea 4: acción concreta o nivel a vigilar
+Máximo 4 líneas. Sin bullets. Sin **."""
+
+PARAMETER temperature 0.35
+PARAMETER num_predict 200
+PARAMETER repeat_penalty 1.1
+PARAMETER top_p 0.9
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|user|>"

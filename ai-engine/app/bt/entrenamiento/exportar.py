@@ -80,13 +80,16 @@ def fusionar_lora(lora_dir: str, merged_dir: str) -> str:
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         torch_dtype=torch.bfloat16,
-        device_map={"": "cpu"},
-        trust_remote_code=True,
     )
 
     log.info("Fusionando adaptadores LoRA...")
     model = PeftModel.from_pretrained(model, lora_dir)
     model = model.merge_and_unload()
+
+    # Workaround: transformers bug where _tied_weights_keys is a list but
+    # _get_tied_weight_keys() calls .keys() on it expecting a dict.
+    if hasattr(model, "_tied_weights_keys") and isinstance(model._tied_weights_keys, list):
+        model._tied_weights_keys = {}
 
     os.makedirs(merged_dir, exist_ok=True)
     log.info(f"Guardando modelo fusionado en {merged_dir}/...")

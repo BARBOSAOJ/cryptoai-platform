@@ -29,6 +29,43 @@ from app.bt.historial import obtener_track_record_global
 
 router = APIRouter(prefix="/chat")
 
+# ── Domain guardrail ──────────────────────────────────────────────────────────
+_FINANCE_KEYWORDS = {
+    "btc", "eth", "sol", "bnb", "xrp", "ada", "dot", "link", "matic", "avax",
+    "doge", "shib", "pepe", "trump",
+    "bitcoin", "ethereum", "solana", "crypto", "token", "defi", "nft", "blockchain",
+    "binance", "coinbase", "altcoin", "staking", "wallet",
+    "mercado", "precio", "señal", "compra", "vende", "vendo", "invierto", "invert",
+    "cartera", "portfolio", "posición", "posiciones", "saldo", "exposición",
+    "rsi", "macd", "indicador", "análisis", "trading", "trader", "stop", "entrada",
+    "kelly", "riesgo", "conviction", "soporte", "resistencia", "tendencia",
+    "inflación", "fed", "tipos", "dólar", "euro", "oro", "bolsa", "nasdaq",
+    "fear", "greed", "sentimiento", "bull", "bear", "corrección", "rebote",
+    "largo", "corto", "breakout", "volumen", "liquidez", "apalancamiento",
+    "patrimonio", "ganancia", "pérdida", "p&l", "rentabilidad",
+}
+_OFFTOPIC_KEYWORDS = {
+    "receta", "cocinar", "cocina", "pasta", "arroz", "pollo", "cena", "almuerzo",
+    "fútbol", "baloncesto", "tenis", "partido", "gol", "deporte", "liga",
+    "película", "serie", "netflix", "canción", "música", "artista", "concierto",
+    "tiempo", "lluvia", "temperatura", "clima", "meteorología",
+    "política", "elecciones", "presidente", "gobierno", "ministro",
+    "chiste", "broma", "historia corta", "cuéntame un",
+    "amor", "novia", "novio", "relación", "pareja", "citas",
+    "medicina", "síntoma", "enfermedad", "doctor", "pastilla",
+    "traducción", "traduce al", "en inglés", "en francés",
+    "poema", "redacción", "ensayo literario",
+}
+
+
+def _es_consulta_financiera(mensaje: str) -> bool:
+    lower = mensaje.lower()
+    if any(k in lower for k in _FINANCE_KEYWORDS):
+        return True
+    if any(k in lower for k in _OFFTOPIC_KEYWORDS):
+        return False
+    return True  # benefit of the doubt (saludos, preguntas ambiguas, etc.)
+
 
 class MensajeChat(BaseModel):
     mensaje: str
@@ -81,6 +118,15 @@ async def chat_stream(
             # ── Ping inmediato — cliente sabe que BT está activo ──────────────
             yield f"data: {json.dumps({'ping': True})}\n\n"
 
+            # ── Guardrail de dominio ──────────────────────────────────────────
+            if not _es_consulta_financiera(body.mensaje):
+                respuesta = "Eso no es mi departamento. ¿Qué quieres revisar en el mercado hoy?"
+                yield f"data: {json.dumps({'content': respuesta})}\n\n"
+                guardar_turno(user_id, "user", body.mensaje)
+                guardar_turno(user_id, "assistant", respuesta)
+                yield "data: [DONE]\n\n"
+                return
+
             # ── Preprocessing en paralelo (dentro del stream) ─────────────────
             if necesita_cartera and token:
                 (contexto, analisis_map), (datos_cartera, datos_stats) = await asyncio.gather(
@@ -117,8 +163,13 @@ async def chat_stream(
 
             # ── Construcción de mensajes ──────────────────────────────────────
             track_records = {sym: obtener_track_record(sym) for sym in analisis_map}
-            # bt-base ya lleva el SYSTEM_PROMPT horneado — no se envía como token
-            messages = []
+            # bt-base lleva el system prompt horneado; reforzamos formato en runtime
+            messages = [{"role": "system", "content": (
+                "REGLAS DE FORMATO (máxima prioridad):\n"
+                "Sin bullets, sin markdown, sin **, sin ##.\n"
+                "Con datos de mercado: máximo 4 líneas. Línea 1 = SÍMBOLO $precio · señal · Conviction N/100.\n"
+                "Sin saludo al inicio de ningún mensaje. Si el usuario saluda, responde en UNA línea."
+            )}]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
             if ctx_memoria:
@@ -164,7 +215,7 @@ async def chat_stream(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
-                options={"temperature": 0.35, "num_predict": 512},
+                options={"temperature": 0.35, "num_predict": 300, "num_ctx": 2048, "stop": ["\n\n\n"]},
             )
             async for chunk in stream:
                 content = chunk["message"]["content"]
@@ -180,6 +231,63 @@ async def chat_stream(
         finally:
             if respuesta_completa:
                 guardar_turno(user_id, "assistant", "".join(respuesta_completa))
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/inicio")
+async def chat_inicio(authorization: Optional[str] = Header(None)):
+    """Briefing proactivo de apertura — formato directo desde datos de mercado, sin LLM.
+    No bloquea Ollama ni añade latencia al primer mensaje del usuario."""
+    token   = authorization.replace("Bearer ", "").strip() if authorization else None
+    user_id = extraer_user_id(token) if token else "anon"
+
+    async def generate():
+        try:
+            yield f"data: {json.dumps({'ping': True})}\n\n"
+
+            _, analisis_map = await obtener_contexto_mercado(["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+
+            lineas: list[str] = []
+            for sym in ["BTCUSDT", "ETHUSDT", "SOLUSDT"]:
+                a = analisis_map.get(sym)
+                if not a:
+                    continue
+                ind = a.get("indicators", {})
+                rsi = ind.get("rsi")
+                rsi_str = f" · RSI {rsi:.0f}" if rsi is not None else ""
+                lineas.append(
+                    f"{sym} ${float(a['entry_price']):,.2f} · {a['signal']} · "
+                    f"Conviction {a['conviction_score']}/100{rsi_str}"
+                )
+
+            # Añade nota de sentimiento o nivel clave basada en BTC
+            btc = analisis_map.get("BTCUSDT")
+            if btc:
+                fg_val = btc.get("fear_greed", {}).get("valor")
+                fg_cls = btc.get("fear_greed", {}).get("clasificacion", "")
+                if fg_val is not None:
+                    fg_int = int(fg_val)
+                    if fg_int <= 25:
+                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}) — zona de capitulación histórica.")
+                    elif fg_int >= 75:
+                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}) — euforia. Riesgo de reversión.")
+                    else:
+                        lineas.append(f"F&G {fg_int}/100 ({fg_cls}).")
+
+            briefing = "\n".join(lineas) if lineas else "Datos de mercado no disponibles ahora mismo."
+            yield f"data: {json.dumps({'content': briefing})}\n\n"
+
+            if briefing and user_id != "anon":
+                guardar_turno(user_id, "assistant", briefing)
+
+        except Exception as e:
+            logger.error(f"Error en chat inicio: {e}")
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

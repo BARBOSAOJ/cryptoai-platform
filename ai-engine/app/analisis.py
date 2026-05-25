@@ -8,7 +8,7 @@ import asyncio
 from app.config import (logger, _has_ml, AI_CACHE_TTL,
                         redis_client, _precios_recientes, _buffer_predicciones)
 from app.monitor import monitor_fallos
-from app.indicadores import IndicadoresTecnicos, confluencia_multi_timeframe, obtener_velas_binance
+from app.indicadores import IndicadoresTecnicos, confluencia_multi_timeframe_async, obtener_velas_binance
 from app.regimen import DetectorRegimen
 from app.sentimiento import obtener_noticias, analizar_titulares
 from app.calibracion import MotorBacktest
@@ -183,7 +183,7 @@ async def realizar_analisis(symbol: str, price: float, history: list, volumes: l
     # Multi-timeframe
     mtf, mtf_boost = {}, 0.0
     try:
-        mtf = confluencia_multi_timeframe(symbol)
+        mtf = await confluencia_multi_timeframe_async(symbol)
         if mtf.get("total", 0) >= 2:
             tech_score = tech_score * 0.55 + mtf["signal"] * 0.45
         ratio = mtf.get("agreement", 0) / max(mtf.get("total", 1), 1)

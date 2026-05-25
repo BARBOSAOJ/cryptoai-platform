@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Crypto AI Engine", version="4.0.0", lifespan=lifespan)
 
-_allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173').split(',')
+_allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176').split(',')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _allowed_origins],

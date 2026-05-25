@@ -23,8 +23,13 @@ for service in user-service market-service ai-engine frontend; do
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile")
     if kill -0 "$pid" 2>/dev/null; then
-      pkill -P "$pid" 2>/dev/null   # hijos (e.g. JVM lanzada por Maven)
-      kill "$pid" 2>/dev/null
+      pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+      if [ -n "$pgid" ] && [ "$pgid" != "0" ]; then
+        kill -- -"$pgid" 2>/dev/null  # mata todo el grupo de procesos
+      else
+        pkill -P "$pid" 2>/dev/null
+        kill "$pid" 2>/dev/null
+      fi
       ok "$service parado (PID $pid)"
     fi
     rm -f "$pidfile"
@@ -33,10 +38,14 @@ done
 
 # ── 2. Fallback por puerto (por si no hay PIDs) ───────────────────────────────
 for port in 8080 8081 8002 5173; do
-  pid=$(ss -tlnp 2>/dev/null | awk -v p=":$port " '$4 ~ p {match($6,/pid=([0-9]+)/,a); print a[1]}')
+  pid=$(ss -tlnp 2>/dev/null | awk -v p="$port" '$4 ~ (":"p"$") && match($6,/pid=[0-9]+/) {print substr($6,RSTART+4,RLENGTH-4)}')
   if [ -n "$pid" ]; then
-    pkill -P "$pid" 2>/dev/null
-    kill "$pid" 2>/dev/null
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ -n "$pgid" ] && [ "$pgid" != "0" ]; then
+      kill -- -"$pgid" 2>/dev/null
+    else
+      kill "$pid" 2>/dev/null
+    fi
     info "Puerto $port liberado (PID $pid)"
   fi
 done

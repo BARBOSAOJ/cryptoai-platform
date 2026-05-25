@@ -7,8 +7,9 @@ Tras el fine-tuning, establece BT_MODEL=bt-crypto en el .env para usar el modelo
 """
 import os
 
-# Modelo Ollama que usa BT. Cambia a "bt-crypto" tras ejecutar fine_tune + exportar.
-BT_MODEL: str = os.getenv("BT_MODEL", "bt-base")
+# Modelo Ollama que usa BT.
+# bt-crypto = Phi-3.5-mini fine-tuned (3.8B, ~6s/resp). bt-base = qwen2.5:14b (~25s/resp).
+BT_MODEL: str = os.getenv("BT_MODEL", "bt-crypto")
 
 SYSTEM_PROMPT = """Eres BT, el sistema de inteligencia financiera de CryptoAI.
 

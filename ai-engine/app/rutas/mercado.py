@@ -6,7 +6,7 @@ import requests
 
 from app.config import logger, BINANCE_KLINES
 from app.analisis import realizar_analisis
-from app.indicadores import obtener_velas_binance, confluencia_multi_timeframe
+from app.indicadores import obtener_velas_binance, confluencia_multi_timeframe_async
 
 router = APIRouter()
 
@@ -97,6 +97,6 @@ async def get_candles(symbol: str, interval: str = "1m", limit: int = 200):
 async def get_multi_timeframe(symbol: str):
     symbol = symbol.upper().strip()
     try:
-        return confluencia_multi_timeframe(symbol)
+        return await confluencia_multi_timeframe_async(symbol)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

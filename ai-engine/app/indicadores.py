@@ -1,6 +1,7 @@
 """
 indicadores.py — Indicadores técnicos, obtención de velas Binance y análisis MTF.
 """
+import asyncio
 import json
 import requests
 from app.config import logger, _has_ml, BINANCE_KLINES, TIMEFRAMES, TIMEFRAME_WEIGHTS, MTF_CACHE_TTL, redis_client
@@ -198,6 +199,66 @@ def confluencia_multi_timeframe(symbol: str) -> dict:
     for tf in TIMEFRAMES:
         limit = 100 if tf in ("1m", "15m") else 60
         data  = obtener_velas_binance(symbol, limit=limit, interval=tf)
+        if len(data["prices"]) < 20:
+            continue
+        result = analizar_senal_timeframe(data["prices"], data["volumes"])
+        tf_results[tf] = result
+        w = TIMEFRAME_WEIGHTS.get(tf, 0.25)
+        weighted_signal += result["signal"] * w
+        total_weight    += w
+        if result["trend"] == "BULLISH":   bullish_count += 1
+        elif result["trend"] == "BEARISH": bearish_count += 1
+
+    if total_weight > 0:
+        weighted_signal /= total_weight
+
+    n          = len(tf_results)
+    agreement  = max(bullish_count, bearish_count)
+    confluence = round(agreement / n, 2) if n > 0 else 0.0
+    dominant   = ("BULLISH" if bullish_count > bearish_count
+                  else "BEARISH" if bearish_count > bullish_count else "NEUTRAL")
+
+    mtf = {
+        "signal":     round(weighted_signal, 3),
+        "confluence": confluence,
+        "timeframes": tf_results,
+        "agreement":  agreement,
+        "total":      n,
+        "dominant":   dominant,
+    }
+    if redis_client:
+        try: redis_client.setex(cache_key, MTF_CACHE_TTL, json.dumps(mtf))
+        except Exception: pass
+    return mtf
+
+
+async def confluencia_multi_timeframe_async(symbol: str) -> dict:
+    """Versión async: las 4 llamadas Binance se lanzan en paralelo con asyncio.gather."""
+    cache_key = f"mtf:{symbol}"
+    if redis_client:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    async def _fetch_tf(tf):
+        limit = 100 if tf in ("1m", "15m") else 60
+        return tf, await asyncio.to_thread(obtener_velas_binance, symbol, limit=limit, interval=tf)
+
+    raw = await asyncio.gather(*[_fetch_tf(tf) for tf in TIMEFRAMES], return_exceptions=True)
+
+    tf_results: dict = {}
+    weighted_signal  = 0.0
+    total_weight     = 0.0
+    bullish_count    = 0
+    bearish_count    = 0
+
+    for item in raw:
+        if isinstance(item, Exception):
+            continue
+        tf, data = item
         if len(data["prices"]) < 20:
             continue
         result = analizar_senal_timeframe(data["prices"], data["volumes"])
