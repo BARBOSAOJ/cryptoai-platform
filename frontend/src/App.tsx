@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Activity, Power } from 'lucide-react'
+import { Activity, Power, TrendingUp, TrendingDown, Target, AlertTriangle, Zap } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiClient, aiClient, API_PRICE } from './api'
 import Header from './components/shared/Header'
+import Sidebar from './components/shared/Sidebar'
 import ChartPanel from './components/terminal/ChartPanel'
 import Login from './components/Login'
 import LoadingSplash from './components/shared/LoadingSplash'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import ChatPanel from './components/chat/ChatPanel'
+import Portfolio from './components/portfolio/Portfolio'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
+import type { PosicionAbierta, EntradaLog } from './hooks/useAgenteAutonomo'
 import Settings from './components/configuracion/Settings'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
@@ -85,8 +88,8 @@ export default function App() {
   const [tradeHistory, setTradeHistory] = useState<any[]>([])
   const [refreshInterval, setRefreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]     = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
+  const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
   const [dataError, setDataError]       = useState<string | null>(null)
   const [aiHealth, setAiHealth]         = useState<{ lstm: boolean; finbert: boolean } | null>(null)
 
@@ -323,7 +326,7 @@ export default function App() {
         aiHealth={aiHealth}
         stopAlertCount={alertasStopLoss.size}
         onLogout={handleLogout}
-        onSettingsOpen={() => setShowSettings(true)}
+        onSettingsOpen={() => setActiveTab('CONFIG')}
       />
 
       {/* Data error banner */}
@@ -343,210 +346,368 @@ export default function App() {
 
       <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
 
-        {/* ── LEFT ──────────────────────────────────────────────────────────── */}
-        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* ── SIDEBAR ───────────────────────────────────────────────────────── */}
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
 
-          {/* Ticker strip */}
-          <div style={{ height:54, background:'var(--bg-panel)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'stretch', overflowX:'auto', flexShrink:0 }}>
-            {MAIN_COINS.map(sym => (
-              <TickerButton
-                key={sym}
-                sym={sym}
-                data={marketData[sym] ? { price: marketData[sym].price, change: marketData[sym].change } : null}
-                active={sym === currentSymbol}
-                onClick={() => setCurrentSymbol(sym)}
-                flash={flashStates[sym] ?? null}
-              />
-            ))}
+        {/* ── CONTENT ───────────────────────────────────────────────────────── */}
+        <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
 
-            {/* AI signal chip */}
-            {insight && confidence !== null && (
-              <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, padding:'0 16px', flexShrink:0 }}>
-                <div style={{ width:1, height:28, background:'var(--border)' }} />
-                <motion.div
-                  animate={isBuy ? { boxShadow: ['0 0 8px rgba(0,208,96,0.2)', '0 0 16px rgba(0,208,96,0.4)', '0 0 8px rgba(0,208,96,0.2)'] } : {}}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  style={{
-                    display:'flex', alignItems:'center', gap:6,
-                    padding:'5px 12px', borderRadius:7,
-                    background: isBuy ? 'rgba(0,208,96,0.08)' : 'rgba(99,102,241,0.06)',
-                    border: `1px solid ${isBuy ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.15)'}`,
-                  }}
-                >
-                  <span style={{ fontSize:8, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px' }}>BT·IA</span>
-                  <span style={{ fontSize:10, fontWeight:700, color: isBuy ? 'var(--green)' : 'var(--indigo)' }}>
-                    {insight.signal}
-                  </span>
-                  <span style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>{confidence}%</span>
-                </motion.div>
-              </div>
-            )}
-          </div>
+          {/* ── TRADE TAB ─────────────────────────────────────────────────── */}
+          {activeTab === 'TRADE' && (
+            <>
+              {/* LEFT: chart area */}
+              <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
-          {/* Chart */}
-          <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
-            <ErrorBoundary fallback="Error en el chart">
-              <ChartPanel symbol={currentSymbol} insight={insight} />
-            </ErrorBoundary>
-          </div>
+                {/* Ticker strip */}
+                <div style={{ height:54, background:'var(--bg-panel)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'stretch', overflowX:'auto', flexShrink:0 }}>
+                  {MAIN_COINS.map(sym => (
+                    <TickerButton
+                      key={sym}
+                      sym={sym}
+                      data={marketData[sym] ? { price: marketData[sym].price, change: marketData[sym].change } : null}
+                      active={sym === currentSymbol}
+                      onClick={() => setCurrentSymbol(sym)}
+                      flash={flashStates[sym] ?? null}
+                    />
+                  ))}
+                  {insight && confidence !== null && (
+                    <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, padding:'0 16px', flexShrink:0 }}>
+                      <div style={{ width:1, height:28, background:'var(--border)' }} />
+                      <motion.div
+                        animate={isBuy ? { boxShadow: ['0 0 8px rgba(0,208,96,0.2)', '0 0 16px rgba(0,208,96,0.4)', '0 0 8px rgba(0,208,96,0.2)'] } : {}}
+                        transition={{ duration: 2, repeat: Infinity }}
+                        style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:7, background: isBuy ? 'rgba(0,208,96,0.08)' : 'rgba(99,102,241,0.06)', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.15)'}` }}
+                      >
+                        <span style={{ fontSize:8, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px' }}>BT·IA</span>
+                        <span style={{ fontSize:10, fontWeight:700, color: isBuy ? 'var(--green)' : 'var(--indigo)' }}>{insight.signal}</span>
+                        <span style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>{confidence}%</span>
+                      </motion.div>
+                    </div>
+                  )}
+                </div>
 
-          {/* Status bar */}
-          <div style={{ height:62, background:'var(--bg-panel)', borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:0, flexShrink:0, overflow:'hidden' }}>
+                {/* Chart */}
+                <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
+                  <ErrorBoundary fallback="Error en el chart">
+                    <ChartPanel symbol={currentSymbol} insight={insight} />
+                  </ErrorBoundary>
+                </div>
 
-            {/* Position info */}
-            {posicionActual ? (
-              <div style={{ display:'flex', alignItems:'center', gap:16, padding:'0 20px', borderRight:'1px solid var(--border)', height:'100%' }}>
-                <div>
-                  <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>POSICIÓN · {currentSymbol.replace('USDT','')}</div>
-                  <div style={{ fontSize:11, fontWeight:600, color:'var(--text-1)', fontFamily:'JetBrains Mono, monospace' }}>
-                    ${precioActual.toLocaleString('en', { maximumFractionDigits: 2 })}
+                {/* Status bar */}
+                <div style={{ height:62, background:'var(--bg-panel)', borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:0, flexShrink:0, overflow:'hidden' }}>
+                  {posicionActual ? (
+                    <div style={{ display:'flex', alignItems:'center', gap:16, padding:'0 20px', borderRight:'1px solid var(--border)', height:'100%' }}>
+                      <div>
+                        <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>POSICIÓN · {currentSymbol.replace('USDT','')}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:'var(--text-1)', fontFamily:'JetBrains Mono, monospace' }}>${precioActual.toLocaleString('en', { maximumFractionDigits: 2 })}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>P&amp;L</div>
+                        <motion.div animate={{ color: pnlEuros >= 0 ? '#00d060' : '#ff3b3b' }} style={{ fontSize:13, fontWeight:700, fontFamily:'JetBrains Mono, monospace' }}>
+                          {pnlEuros >= 0 ? '+' : ''}{pnlEuros.toFixed(2)}€
+                          <span style={{ fontSize:9, marginLeft:4, opacity:0.7 }}>({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                        </motion.div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>STOP</div>
+                        <div style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>${posicionActual.stopLoss.toLocaleString('en', { maximumFractionDigits: 4 })}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>TARGET</div>
+                        <div style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>${posicionActual.targetPrice.toLocaleString('en', { maximumFractionDigits: 4 })}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display:'flex', alignItems:'center', padding:'0 20px', borderRight:'1px solid var(--border)', height:'100%' }}>
+                      <span style={{ fontSize:10, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>Sin posición abierta en {currentSymbol.replace('USDT','')}</span>
+                    </div>
+                  )}
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'0 20px', height:'100%' }}>
+                    <motion.button
+                      whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.95 }}
+                      onClick={estadoAgente.activo ? pausar : activar}
+                      style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:7, background: estadoAgente.activo ? 'rgba(0,208,96,0.08)' : 'var(--bg-input)', border: `1px solid ${estadoAgente.activo ? 'rgba(0,208,96,0.2)' : 'var(--border-2)'}`, color: estadoAgente.activo ? 'var(--green)' : 'var(--text-4)', fontSize:10, fontFamily:'JetBrains Mono, monospace', cursor:'pointer', letterSpacing:'0.5px', boxShadow: estadoAgente.activo ? '0 0 10px rgba(0,208,96,0.12)' : 'none', transition: 'all var(--transition)' }}
+                    >
+                      <Power size={11} strokeWidth={2} />
+                      AGENTE · {estadoAgente.activo ? 'ON' : 'OFF'}
+                    </motion.button>
+                    {estadoAgente.activo && (
+                      <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <Activity size={10} color="var(--green)" />
+                        <span style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace' }}>
+                          {Object.values(estadoAgente.posicionesAbiertas).length} pos · {estadoAgente.log[0]?.mensaje?.slice(0,38) || 'vigilando'}
+                        </span>
+                      </motion.div>
+                    )}
                   </div>
-                </div>
-                <div>
-                  <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>P&amp;L</div>
-                  <motion.div
-                    animate={{ color: pnlEuros >= 0 ? '#00d060' : '#ff3b3b' }}
-                    style={{ fontSize:13, fontWeight:700, fontFamily:'JetBrains Mono, monospace' }}
-                  >
-                    {pnlEuros >= 0 ? '+' : ''}{pnlEuros.toFixed(2)}€
-                    <span style={{ fontSize:9, marginLeft:4, opacity:0.7 }}>({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
-                  </motion.div>
-                </div>
-                <div>
-                  <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>STOP</div>
-                  <div style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>
-                    ${posicionActual.stopLoss.toLocaleString('en', { maximumFractionDigits: 4 })}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>TARGET</div>
-                  <div style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>
-                    ${posicionActual.targetPrice.toLocaleString('en', { maximumFractionDigits: 4 })}
-                  </div>
+                  <AnimatePresence>
+                    {alertFlash && (
+                      <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} style={{ marginLeft:'auto', padding:'0 20px', flexShrink:0 }}>
+                        <div style={{ fontSize:9, color:'var(--green)', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,208,96,0.08)', border:'1px solid rgba(0,208,96,0.2)', padding:'4px 10px', borderRadius:6, boxShadow:'0 0 12px rgba(0,208,96,0.2)', animation: 'pulse 1s infinite' }}>
+                          SEÑAL COMPRA DETECTADA
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
-            ) : (
-              <div style={{ display:'flex', alignItems:'center', padding:'0 20px', borderRight:'1px solid var(--border)', height:'100%' }}>
-                <span style={{ fontSize:10, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>
-                  Sin posición abierta en {currentSymbol.replace('USDT','')}
-                </span>
+
+              {/* RIGHT: BT chat */}
+              <div style={{ width:400, flexShrink:0, borderLeft:'1px solid var(--border)' }}>
+                <ErrorBoundary fallback="Error en BT">
+                  <ChatPanel
+                    onAction={(a) => {
+                      if (a.action === 'change_symbol' && a.symbol) setCurrentSymbol(a.symbol)
+                    }}
+                  />
+                </ErrorBoundary>
               </div>
-            )}
+            </>
+          )}
 
-            {/* Agent toggle */}
-            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'0 20px', height:'100%' }}>
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={estadoAgente.activo ? pausar : activar}
-                style={{
-                  display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:7,
-                  background: estadoAgente.activo ? 'rgba(0,208,96,0.08)' : 'var(--bg-input)',
-                  border: `1px solid ${estadoAgente.activo ? 'rgba(0,208,96,0.2)' : 'var(--border-2)'}`,
-                  color: estadoAgente.activo ? 'var(--green)' : 'var(--text-4)',
-                  fontSize:10, fontFamily:'JetBrains Mono, monospace', cursor:'pointer', letterSpacing:'0.5px',
-                  boxShadow: estadoAgente.activo ? '0 0 10px rgba(0,208,96,0.12)' : 'none',
-                  transition: 'all var(--transition)',
-                }}
-              >
-                <Power size={11} strokeWidth={2} />
-                AGENTE · {estadoAgente.activo ? 'ON' : 'OFF'}
-              </motion.button>
-
-              {estadoAgente.activo && (
-                <motion.div
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  style={{ display:'flex', alignItems:'center', gap:6 }}
-                >
-                  <Activity size={10} color="var(--green)" />
-                  <span style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace' }}>
-                    {Object.values(estadoAgente.posicionesAbiertas).length} pos · {estadoAgente.log[0]?.mensaje?.slice(0,38) || 'vigilando'}
-                  </span>
-                </motion.div>
-              )}
+          {/* ── PORTFOLIO TAB ─────────────────────────────────────────────── */}
+          {activeTab === 'PORTFOLIO' && (
+            <div style={{ flex:1, overflowY:'auto' }}>
+              <ErrorBoundary fallback="Error en portfolio">
+                <Portfolio user={user} marketData={marketData} />
+              </ErrorBoundary>
             </div>
+          )}
 
-            {/* Buy signal flash */}
-            <AnimatePresence>
-              {alertFlash && (
-                <motion.div
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                  style={{ marginLeft:'auto', padding:'0 20px', flexShrink:0 }}
-                >
-                  <div style={{
-                    fontSize:9, color:'var(--green)', fontFamily:'JetBrains Mono, monospace',
-                    background:'rgba(0,208,96,0.08)', border:'1px solid rgba(0,208,96,0.2)',
-                    padding:'4px 10px', borderRadius:6,
-                    boxShadow:'0 0 12px rgba(0,208,96,0.2)',
-                    animation: 'pulse 1s infinite',
-                  }}>
-                    SEÑAL COMPRA DETECTADA
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+          {/* ── BOT TAB ───────────────────────────────────────────────────── */}
+          {activeTab === 'BOT' && (
+            <div style={{ flex:1, overflowY:'auto' }}>
+              <AgentePanel
+                estadoAgente={estadoAgente}
+                marketData={marketData}
+                onActivar={activar}
+                onPausar={pausar}
+              />
+            </div>
+          )}
 
-        {/* ── RIGHT: BT chat ──────────────────────────────────────────────── */}
-        <div style={{ width:400, flexShrink:0, borderLeft:'1px solid var(--border)' }}>
-          <ErrorBoundary fallback="Error en BT">
-            <ChatPanel
-              onAction={(a) => {
-                if (a.action === 'change_symbol' && a.symbol) setCurrentSymbol(a.symbol)
-              }}
-            />
-          </ErrorBoundary>
-        </div>
-      </div>
-
-      {/* Settings overlay */}
-      <AnimatePresence>
-        {showSettings && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowSettings(false)}
-            style={{
-              position:'fixed', inset:0, zIndex:200,
-              background:'rgba(4,10,24,0.82)', backdropFilter:'blur(4px)',
-              display:'flex', alignItems:'flex-start', justifyContent:'flex-end',
-            }}
-          >
-            <motion.div
-              initial={{ x: '100%', opacity: 0 }}
-              animate={{ x: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 30 } }}
-              exit={{ x: '100%', opacity: 0, transition: { duration: 0.2 } }}
-              onClick={e => e.stopPropagation()}
-              style={{
-                width:560, height:'100%', background:'var(--bg-base)',
-                borderLeft:'1px solid var(--border)', overflowY:'auto',
-              }}
-            >
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 24px 14px', borderBottom:'1px solid var(--border)' }}>
-                <span style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-4)', letterSpacing:'2px', textTransform:'uppercase' }}>Configuración</span>
-                <motion.button
-                  whileHover={{ background: 'rgba(255,59,59,0.08)' }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={() => setShowSettings(false)}
-                  style={{ background:'none', border:'1px solid var(--border-2)', borderRadius:7, color:'var(--text-3)', cursor:'pointer', padding:'5px 10px', fontSize:11, fontFamily:'JetBrains Mono, monospace', transition: 'all var(--transition)' }}
-                >
-                  ESC
-                </motion.button>
-              </div>
+          {/* ── CONFIG TAB ────────────────────────────────────────────────── */}
+          {activeTab === 'CONFIG' && (
+            <div style={{ flex:1, overflowY:'auto', padding:'24px 32px' }}>
               <Settings
                 setRefreshInterval={setRefreshInterval}
                 currentInterval={refreshInterval}
                 aiHealth={aiHealth}
               />
-            </motion.div>
-          </motion.div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Panel del Agente Autónomo ────────────────────────────────────────────────
+
+function AgentePanel({
+  estadoAgente, marketData, onActivar, onPausar
+}: {
+  estadoAgente: any
+  marketData: Record<string, any>
+  onActivar: () => void
+  onPausar: () => void
+}) {
+  const posiciones: [string, PosicionAbierta][] = Object.entries(estadoAgente.posicionesAbiertas)
+  const log: EntradaLog[] = estadoAgente.log ?? []
+
+  const totalInvertido = posiciones.reduce((acc, [, p]) => acc + p.invertido, 0)
+  const totalPnl = posiciones.reduce((acc, [sym, p]) => {
+    const precio = marketData[sym]?.price ?? p.precio
+    return acc + (precio - p.precio) * p.cantidad
+  }, 0)
+
+  return (
+    <div style={{ padding:'32px 36px', fontFamily:'Inter, sans-serif', color:'#fff' }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28 }}>
+        <div>
+          <h2 style={{ margin:0, fontSize:20, fontWeight:700, letterSpacing:'-0.5px' }}>Agente Autónomo</h2>
+          <p style={{ margin:'4px 0 0', fontSize:11, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace' }}>
+            Simulador de trading en tiempo real
+          </p>
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}
+          onClick={estadoAgente.activo ? onPausar : onActivar}
+          style={{
+            display:'flex', alignItems:'center', gap:8, padding:'10px 20px', borderRadius:10,
+            background: estadoAgente.activo ? 'rgba(255,59,59,0.1)' : 'rgba(0,208,96,0.1)',
+            border: `1px solid ${estadoAgente.activo ? 'rgba(255,59,59,0.3)' : 'rgba(0,208,96,0.3)'}`,
+            color: estadoAgente.activo ? '#ff6b6b' : '#00d060',
+            fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'JetBrains Mono, monospace',
+            letterSpacing:'0.5px',
+          }}
+        >
+          <Power size={14} strokeWidth={2} />
+          {estadoAgente.activo ? 'PAUSAR AGENTE' : 'ACTIVAR AGENTE'}
+        </motion.button>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:12, marginBottom:28 }}>
+        {[
+          { label:'Estado', value: estadoAgente.activo ? '● Activo' : '○ Pausado', color: estadoAgente.activo ? '#00d060' : 'var(--text-4)' },
+          { label:'Posiciones abiertas', value: String(posiciones.length), color:'var(--text-1)' },
+          { label:'Total invertido', value: `$${totalInvertido.toFixed(2)}`, color:'var(--text-1)' },
+          { label:'P&L agente', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, color: totalPnl >= 0 ? '#00d060' : '#ff3b3b' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ background:'#091220', border:'1px solid #111e35', borderRadius:14, padding:'18px 20px' }}>
+            <div style={{ fontSize:10, color:'var(--text-4)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:10 }}>{label}</div>
+            <div style={{ fontSize:22, fontWeight:700, letterSpacing:'-0.5px', color }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Posiciones abiertas */}
+      <div style={{ marginBottom:28 }}>
+        <p style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-5)', letterSpacing:'2px', textTransform:'uppercase', margin:'0 0 12px' }}>
+          Posiciones abiertas en tiempo real
+        </p>
+        {posiciones.length === 0 ? (
+          <div style={{ background:'#091220', border:'1px solid #111e35', borderRadius:14, padding:'28px 24px', textAlign:'center', fontSize:12, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>
+            El agente no tiene posiciones abiertas. Actívalo para que empiece a operar.
+          </div>
+        ) : (
+          <div style={{ background:'#091220', border:'1px solid #111e35', borderRadius:14, overflow:'hidden' }}>
+            {/* Cabecera tabla */}
+            <div style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1fr 1fr 1fr 1fr 1fr', padding:'10px 20px', borderBottom:'1px solid #111e35', fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px', textTransform:'uppercase' }}>
+              <span>Activo</span><span style={{ textAlign:'right' }}>Entrada</span><span style={{ textAlign:'right' }}>Actual</span>
+              <span style={{ textAlign:'right' }}>P&L $</span><span style={{ textAlign:'right' }}>P&L %</span>
+              <span style={{ textAlign:'right' }}>Stop</span><span style={{ textAlign:'right' }}>Target</span>
+            </div>
+            {posiciones.map(([sym, pos], i) => {
+              const precioActual = marketData[sym]?.price ?? pos.precio
+              const pnl = (precioActual - pos.precio) * pos.cantidad
+              const pnlPct = pos.precio > 0 ? ((precioActual - pos.precio) / pos.precio) * 100 : 0
+              const ganando = pnl >= 0
+              const enStop = precioActual <= pos.stopLoss
+              return (
+                <motion.div
+                  key={sym}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  style={{
+                    display:'grid', gridTemplateColumns:'1.5fr 1fr 1fr 1fr 1fr 1fr 1fr',
+                    padding:'14px 20px', alignItems:'center',
+                    borderBottom: i < posiciones.length - 1 ? '1px solid #0e0e0e' : 'none',
+                    background: enStop ? 'rgba(255,59,59,0.04)' : ganando ? 'rgba(0,208,96,0.02)' : 'transparent',
+                  }}
+                >
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:32, height:32, borderRadius:'50%', background:'#111e35', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'var(--text-3)', flexShrink:0 }}>
+                      {sym.replace('USDT','').slice(0,2)}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:600 }}>{sym.replace('USDT','')}</div>
+                      <div style={{ fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>{pos.cantidad.toFixed(6)}</div>
+                    </div>
+                    {enStop && <AlertTriangle size={12} color="#ff3b3b" style={{ flexShrink:0 }} />}
+                  </div>
+                  <div style={{ textAlign:'right', fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>
+                    ${pos.precio.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                  <div style={{ textAlign:'right', fontSize:11, fontFamily:'JetBrains Mono, monospace', color:'var(--text-1)', fontWeight:600 }}>
+                    ${precioActual.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                  <div style={{ textAlign:'right', fontSize:12, fontFamily:'JetBrains Mono, monospace', fontWeight:700, color: ganando ? '#00d060' : '#ff3b3b' }}>
+                    {ganando ? '+' : ''}{pnl.toFixed(2)}
+                  </div>
+                  <div style={{ textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4 }}>
+                    {ganando ? <TrendingUp size={11} color="#00d060" /> : <TrendingDown size={11} color="#ff3b3b" />}
+                    <span style={{ fontSize:11, fontFamily:'JetBrains Mono, monospace', color: ganando ? '#00d060' : '#ff3b3b' }}>
+                      {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div style={{ textAlign:'right', fontSize:10, fontFamily:'JetBrains Mono, monospace', color:'#ff6b6b' }}>
+                    ${pos.stopLoss.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                  <div style={{ textAlign:'right', fontSize:10, fontFamily:'JetBrains Mono, monospace', color:'#00d060' }}>
+                    ${pos.targetPrice.toLocaleString('en', { maximumFractionDigits: 4 })}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </div>
         )}
-      </AnimatePresence>
+      </div>
+
+      {/* Log de decisiones */}
+      <div>
+        <p style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-5)', letterSpacing:'2px', textTransform:'uppercase', margin:'0 0 12px' }}>
+          Registro de decisiones
+        </p>
+        {log.length === 0 ? (
+          <div style={{ background:'#091220', border:'1px solid #111e35', borderRadius:14, padding:'20px 24px', textAlign:'center', fontSize:11, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>
+            Sin actividad registrada aún.
+          </div>
+        ) : (
+          <div style={{ background:'#091220', border:'1px solid #111e35', borderRadius:14, overflow:'hidden', maxHeight:320, overflowY:'auto' }}>
+            {log.slice(0, 20).map((entrada, i) => {
+              const esBuy  = entrada.accion?.includes('COMPRA') || entrada.accion?.includes('BUY')
+              const esSell = entrada.accion?.includes('VENTA') || entrada.accion?.includes('SELL')
+              const color  = esBuy ? '#00d060' : esSell ? '#ff6b6b' : 'var(--text-4)'
+              return (
+                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'10px 20px', borderBottom: i < log.length - 1 ? '1px solid #0a1020' : 'none' }}>
+                  <div style={{ width:6, height:6, borderRadius:'50%', background:color, flexShrink:0, marginTop:5 }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+                      <span style={{ fontSize:10, fontWeight:600, fontFamily:'JetBrains Mono, monospace', color }}>
+                        {entrada.symbol?.replace('USDT','')} · {entrada.accion}
+                      </span>
+                      {entrada.precio > 0 && (
+                        <span style={{ fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace' }}>
+                          ${entrada.precio.toLocaleString('en', { maximumFractionDigits: 4 })}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize:11, color:'var(--text-3)', lineHeight:1.4 }}>
+                      {entrada.motivo}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace', flexShrink:0 }}>
+                    {new Date(entrada.timestamp).toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Config por símbolo */}
+      <div style={{ marginTop:28 }}>
+        <p style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-5)', letterSpacing:'2px', textTransform:'uppercase', margin:'0 0 12px' }}>
+          Configuración por activo
+        </p>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
+          {Object.entries(estadoAgente.configuracion ?? {}).map(([sym, cfg]: [string, any]) => (
+            <div key={sym} style={{ background:'#091220', border:`1px solid ${cfg.activo ? 'rgba(0,208,96,0.2)' : '#111e35'}`, borderRadius:12, padding:'14px 16px' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                <span style={{ fontSize:12, fontWeight:700 }}>{sym.replace('USDT','')}</span>
+                <span style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', padding:'2px 7px', borderRadius:4, color: cfg.activo ? '#00d060' : 'var(--text-5)', background: cfg.activo ? 'rgba(0,208,96,0.08)' : '#0d1a2e', border: `1px solid ${cfg.activo ? 'rgba(0,208,96,0.2)' : '#1a2840'}` }}>
+                  {cfg.activo ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              <div style={{ display:'flex', gap:12 }}>
+                <div>
+                  <div style={{ fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>Tamaño</div>
+                  <div style={{ fontSize:12, fontFamily:'JetBrains Mono, monospace' }}>${cfg.cantidadMaxima}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize:9, color:'var(--text-5)', fontFamily:'JetBrains Mono, monospace', marginBottom:2 }}>Umbral</div>
+                  <div style={{ fontSize:12, fontFamily:'JetBrains Mono, monospace' }}>{cfg.umbralConfianza}%</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
