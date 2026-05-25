@@ -144,8 +144,10 @@ if ! port_in_use 8002; then
     .venv/bin/pip install -r requirements.txt >> "$LOG/ai-engine-install.log" 2>&1
     ok "Dependencias Python instaladas"
   fi
-  .venv/bin/python main.py > "$LOG/ai-engine.log" 2>&1 &
-  echo $! > "$PIDS/ai-engine.pid"
+  nohup .venv/bin/python main.py > "$LOG/ai-engine.log" 2>&1 &
+  PID_AE=$!
+  disown -h $PID_AE
+  echo $PID_AE > "$PIDS/ai-engine.pid"
 else
   ok "ai-engine ya está corriendo en :8002 (omitiendo)"
 fi

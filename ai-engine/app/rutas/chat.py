@@ -161,14 +161,39 @@ async def chat_stream(
                         )
                         orden_resultado = {**intencion, "price": float(a["entry_price"]), "resultado": resultado}
 
-            # ── Construcción de mensajes ──────────────────────────────────────
+            # ── Cabecera determinista (cuando hay datos de mercado) ───────────
+            # Las líneas de símbolo·precio·señal·conviction se construyen
+            # directamente desde el análisis para garantizar formato consistente.
+            # El LLM solo añade la lectura y la acción concreta.
             track_records = {sym: obtener_track_record(sym) for sym in analisis_map}
-            # bt-base lleva el system prompt horneado; reforzamos formato en runtime
+            header_lines: list[str] = []
+            if analisis_map:
+                for sym in list(analisis_map.keys())[:3]:
+                    a   = analisis_map[sym]
+                    ind = a.get("indicators", {})
+                    rsi = ind.get("rsi")
+                    rsi_str = f" · RSI {rsi:.1f}" if rsi is not None else ""
+                    header_lines.append(
+                        f"{sym} ${float(a['entry_price']):,.2f} · {a['signal']} · "
+                        f"Conviction {a['conviction_score']}/100{rsi_str}"
+                    )
+                # F&G del primer símbolo disponible
+                first_a = next(iter(analisis_map.values()))
+                fg = first_a.get("fear_greed", {})
+                fg_val = fg.get("valor")
+                if fg_val is not None:
+                    header_lines.append(f"F&G {int(fg_val)}/100 ({fg.get('clasificacion', '')})")
+
+                header_text = "\n".join(header_lines)
+                respuesta_completa.append(header_text + "\n")
+                yield f"data: {json.dumps({'content': header_text + chr(10)})}\n\n"
+
+            # ── Construcción de mensajes para el LLM ──────────────────────────
             messages = [{"role": "system", "content": (
-                "REGLAS DE FORMATO (máxima prioridad):\n"
-                "Sin bullets, sin markdown, sin **, sin ##.\n"
-                "Con datos de mercado: máximo 4 líneas. Línea 1 = SÍMBOLO $precio · señal · Conviction N/100.\n"
-                "Sin saludo al inicio de ningún mensaje. Si el usuario saluda, responde en UNA línea."
+                "Sin markdown. Sin bullets. Sin saludos. Responde en español. "
+                + ("Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
+                   if analisis_map else
+                   "Para saludos o preguntas generales: responde en una sola línea, directo.")
             )}]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
@@ -210,12 +235,12 @@ async def chat_stream(
             messages.append({"role": "user", "content": user_content})
             guardar_turno(user_id, "user", body.mensaje)
 
-            # ── Stream LLM ────────────────────────────────────────────────────
+            # ── Stream LLM (solo comentario/análisis, cabecera ya enviada) ────
             stream = await ollama.AsyncClient().chat(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
-                options={"temperature": 0.35, "num_predict": 300, "num_ctx": 2048, "stop": ["\n\n\n"]},
+                options={"temperature": 0.35, "num_predict": 120, "num_ctx": 2048, "stop": ["\n\n\n"]},
             )
             async for chunk in stream:
                 content = chunk["message"]["content"]
