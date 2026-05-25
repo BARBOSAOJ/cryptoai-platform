@@ -74,7 +74,13 @@ SYMBOL_MAP: dict[str, str] = {
 
 _KNOWN_TICKERS = {s.replace('USDT', '') for s in SYMBOL_MAP.values()}
 
-_BUY_WORDS  = r'\b(compra|comprar|compro|invierte|invertir|invierto|pon|meter|entra|buy)\b'
-_SELL_WORDS = r'\b(vende|vender|vendo|cierra|cerrar|cierro|sell)\b'
-# Captura "$100", "100$", "100 dólares", "100 euros", "100 usd"
-_AMOUNT_RE  = r'\$\s*(\d+(?:[.,]\d+)?)|\b(\d+(?:[.,]\d+)?)\s*(?:\$|€|dólares?|euros?|usd)\b'
+_BUY_WORDS  = (
+    r'\b(compra|comprar|compro|comprame|'
+    r'invierte|invertir|invierto|invierteme|inverteme|invirtame|'
+    r'pon|ponme|meter|meteme|metame|'
+    r'entra|entrar|entro|'
+    r'buy|quiero\s+comprar|quiero\s+invertir)\b'
+)
+_SELL_WORDS = r'\b(vende|vender|vendo|cierra|cerrar|cierro|vendeme|sell)\b'
+# "$100", "100$", "100 dolares/dólares", "100 euros", "100 usd"
+_AMOUNT_RE  = r'\$\s*(\d+(?:[.,]\d+)?)|\b(\d+(?:[.,]\d+)?)\s*(?:\$|€|d[oó]lares?|euros?|usd)\b'
