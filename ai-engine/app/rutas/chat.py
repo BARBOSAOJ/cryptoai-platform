@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.config import logger
-from app.bt.config   import BT_MODEL
+from app.bt.config   import BT_MODEL, SYSTEM_PROMPT
 from app.bt.detectar import detectar_simbolos, detectar_intencion_trade
 from app.bt.contexto import obtener_contexto_mercado, construir_track_record_contexto
 from app.bt.ordenes  import ejecutar_orden
@@ -362,11 +362,12 @@ async def chat_stream(
             elif analisis_map:
                 llm_instruccion = "Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
             else:
-                llm_instruccion = "Para saludos o preguntas generales: responde en una sola línea, directo."
+                llm_instruccion = "Responde directamente con datos concretos y criterio propio. Máximo 3 líneas."
 
-            messages = [{"role": "system", "content": (
-                "Sin markdown. Sin bullets. Sin saludos. Responde en español. " + llm_instruccion
-            )}]
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": "Sin markdown. Sin bullets. " + llm_instruccion},
+            ]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
             if ctx_memoria:
