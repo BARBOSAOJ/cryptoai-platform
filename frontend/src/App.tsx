@@ -13,6 +13,7 @@ import Portfolio from './components/portfolio/Portfolio'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 import type { PosicionAbierta, EntradaLog } from './hooks/useAgenteAutonomo'
 import Settings from './components/configuracion/Settings'
+import AlertasPanel from './components/terminal/AlertasPanel'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -370,20 +371,27 @@ export default function App() {
                       flash={flashStates[sym] ?? null}
                     />
                   ))}
-                  {insight && confidence !== null && (
-                    <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, padding:'0 16px', flexShrink:0 }}>
-                      <div style={{ width:1, height:28, background:'var(--border)' }} />
-                      <motion.div
-                        animate={isBuy ? { boxShadow: ['0 0 8px rgba(0,208,96,0.2)', '0 0 16px rgba(0,208,96,0.4)', '0 0 8px rgba(0,208,96,0.2)'] } : {}}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:7, background: isBuy ? 'rgba(0,208,96,0.08)' : 'rgba(99,102,241,0.06)', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.15)'}` }}
-                      >
-                        <span style={{ fontSize:8, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px' }}>BT·IA</span>
-                        <span style={{ fontSize:10, fontWeight:700, color: isBuy ? 'var(--green)' : 'var(--indigo)' }}>{insight.signal}</span>
-                        <span style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>{confidence}%</span>
-                      </motion.div>
-                    </div>
-                  )}
+                  <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, padding:'0 12px', flexShrink:0 }}>
+                    {insight && confidence !== null && (
+                      <>
+                        <div style={{ width:1, height:28, background:'var(--border)' }} />
+                        <motion.div
+                          animate={isBuy ? { boxShadow: ['0 0 8px rgba(0,208,96,0.2)', '0 0 16px rgba(0,208,96,0.4)', '0 0 8px rgba(0,208,96,0.2)'] } : {}}
+                          transition={{ duration: 2, repeat: Infinity }}
+                          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:7, background: isBuy ? 'rgba(0,208,96,0.08)' : 'rgba(99,102,241,0.06)', border: `1px solid ${isBuy ? 'rgba(0,208,96,0.2)' : 'rgba(99,102,241,0.15)'}` }}
+                        >
+                          <span style={{ fontSize:8, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace', letterSpacing:'1px' }}>BT·IA</span>
+                          <span style={{ fontSize:10, fontWeight:700, color: isBuy ? 'var(--green)' : 'var(--indigo)' }}>{insight.signal}</span>
+                          <span style={{ fontSize:9, fontFamily:'JetBrains Mono, monospace', color:'var(--text-3)' }}>{confidence}%</span>
+                        </motion.div>
+                      </>
+                    )}
+                    <div style={{ width:1, height:28, background:'var(--border)' }} />
+                    <AlertasPanel
+                      currentSymbol={currentSymbol}
+                      currentPrice={marketData[currentSymbol]?.price}
+                    />
+                  </div>
                 </div>
 
                 {/* Chart */}
