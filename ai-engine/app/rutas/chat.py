@@ -40,54 +40,84 @@ _FINANCE_KEYWORDS = {
     # ── Tickers ───────────────────────────────────────────────────────────────
     "btc", "eth", "sol", "bnb", "xrp", "ada", "dot", "link", "matic", "avax",
     "doge", "shib", "pepe", "trump", "ltc", "trx", "uni", "aave", "inj",
-    "rndr", "render", "popcat", "floki", "atom", "near", "bonk",
-    # ── Nombres completos ─────────────────────────────────────────────────────
+    "rndr", "render", "popcat", "floki", "atom", "near", "bonk", "wif",
+    "arb", "op", "sui", "apt", "ton", "wld", "not", "ftm", "jup",
+    # ── Nombres de activos ────────────────────────────────────────────────────
     "bitcoin", "ethereum", "solana", "binance", "coinbase", "ripple",
     "dogecoin", "cardano", "avalanche", "polkadot", "chainlink", "polygon",
     "litecoin", "cosmos", "tron", "uniswap", "injective", "arbitrum",
     "optimism", "aptos", "toncoin", "worldcoin", "notcoin", "fantom",
-    "jupiter", "floki", "popcat", "bonk",
-    # ── Conceptos cripto ──────────────────────────────────────────────────────
-    "crypto", "cripto", "criptomoneda", "criptomonedas",
-    "token", "tokens", "defi", "nft", "blockchain", "altcoin", "altcoins",
-    "staking", "wallet", "exchange", "memecoin", "memecoins",
-    "halving", "pump", "dump", "rugpull", "airdrop", "whitepaper",
+    "jupiter", "floki", "popcat", "bonk", "dogwifhat", "shiba",
+    # ── Cripto general ────────────────────────────────────────────────────────
+    "crypto", "cripto", "criptomoneda", "criptomonedas", "criptodivisas",
+    "token", "tokens", "coin", "coins", "defi", "nft", "nfts", "blockchain",
+    "altcoin", "altcoins", "staking", "wallet", "exchange", "memecoin",
+    "memecoins", "halving", "pump", "dump", "rugpull", "airdrop",
+    "whitepaper", "layer1", "layer2", "l1", "l2", "bridge", "liquidity",
+    "tvl", "yield", "farming", "pool", "amm", "dex", "cex", "gas",
+    # ── Preguntas de consejo e inversión ─────────────────────────────────────
+    "invertir", "invertir en", "donde invertir", "cuanto invertir",
+    "inversion", "inversión", "inversiones", "recomiendas", "recomienda",
+    "recomendacion", "recomendación", "oportunidad", "oportunidades",
+    "donde poner", "donde meter", "que comprar", "qué comprar",
+    "merece la pena", "vale la pena", "conviene", "deberia", "debería",
+    "mejor momento", "buen momento", "momento de", "es buen", "es malo",
+    "invierto", "invierta", "invierteme", "cuanto poner", "cuanto meto",
+    "cuanto arriesgo", "cuanto riesgo",
     # ── Mercado y precio ──────────────────────────────────────────────────────
-    "mercado", "precio", "precios", "cotizacion", "cotizaciones",
-    "señal", "senal", "compra", "vende", "vendo", "invierto", "invertir",
-    "inversion", "inversión",
+    "mercado", "precio", "precios", "cotizacion", "cotizaciones", "valor",
+    "señal", "senal", "compra", "comprar", "vende", "vender", "vendo",
+    "subir", "bajar", "sube", "baja", "subida", "bajada", "alza", "caida",
+    "caída", "rebote", "recuperacion", "recuperación", "maximos", "mínimos",
+    "maximo", "minimo", "ath", "atl", "all time high", "resistencia maxima",
     # ── Cartera / posiciones ──────────────────────────────────────────────────
-    "cartera", "portfolio", "posicion", "posición", "posiciones",
-    "saldo", "exposicion", "exposición", "patrimonio", "capital",
-    "ganancia", "ganancias", "perdida", "pérdida", "perdidas",
-    "p&l", "rentabilidad", "rendimiento",
+    "cartera", "portfolio", "posicion", "posición", "posiciones", "abrir",
+    "cerrar", "saldo", "exposicion", "exposición", "patrimonio", "capital",
+    "ganancia", "ganancias", "perdida", "pérdida", "perdidas", "beneficio",
+    "beneficios", "p&l", "pnl", "rentabilidad", "rendimiento", "retorno",
+    "roi", "profits", "losses",
     # ── Indicadores técnicos ──────────────────────────────────────────────────
     "rsi", "macd", "indicador", "indicadores", "analisis", "análisis",
     "soporte", "resistencia", "tendencia", "volumen", "liquidez",
-    "bollinger", "ema", "sma", "vela", "velas", "candlestick",
-    "grafica", "gráfica", "chart", "grafico", "gráfico",
-    # ── Trading ───────────────────────────────────────────────────────────────
+    "bollinger", "ema", "sma", "atr", "obv", "divergencia", "cruce",
+    "vela", "velas", "candlestick", "patron", "patrón", "hammer", "doji",
+    "engulfing", "breakout", "breakdown", "rango", "canal", "cuña",
+    "triangulo", "triángulo", "doble techo", "doble suelo", "fibonacci",
+    "grafica", "gráfica", "chart", "grafico", "gráfico", "timeframe",
+    # ── Trading y operativa ───────────────────────────────────────────────────
     "trading", "trader", "stop", "stoploss", "stop loss", "take profit",
-    "entrada", "salida", "setup", "breakout", "breakdown",
-    "kelly", "riesgo", "conviction",
-    "largo", "corto", "long", "short", "apalancamiento",
-    # ── Macro ─────────────────────────────────────────────────────────────────
-    "inflacion", "inflación", "fed", "tipos", "dolar", "dólar",
-    "euro", "oro", "bolsa", "nasdaq", "sp500",
+    "entrada", "salida", "setup", "kelly", "riesgo", "conviction",
+    "largo", "corto", "long", "short", "apalancamiento", "leverage",
+    "futuros", "opciones", "perpetuo", "perp", "spot", "margen",
+    "liquidacion", "liquidación", "funding", "open interest", "scalping",
+    "daytrading", "swing", "hodl", "dca", "promedio", "acumular",
+    "sizing", "posicion size", "ratio", "r/r", "riesgo beneficio",
+    # ── Macro y mercados tradicionales ───────────────────────────────────────
+    "inflacion", "inflación", "fed", "reserva federal", "tipos", "interes",
+    "interés", "dolar", "dólar", "dxy", "euro", "libra", "yen",
+    "oro", "plata", "petroleo", "petróleo", "materias primas",
+    "bolsa", "acciones", "nasdaq", "sp500", "s&p", "dow jones",
+    "bear market", "bull market", "recesion", "recesión", "qe", "qt",
+    "liquidez", "m2", "curva de tipos", "bono", "bonos", "yields",
     # ── Sentimiento ───────────────────────────────────────────────────────────
-    "fear", "greed", "sentimiento", "bull", "bear",
-    "correccion", "corrección", "rebote", "fomo", "panico", "pánico",
+    "fear", "greed", "miedo", "avaricia", "sentimiento", "bull", "bear",
+    "correccion", "corrección", "fomo", "panico", "pánico", "capitulacion",
+    "capitulación", "euforia", "optimismo", "pesimismo", "dominancia",
+    "altseason", "temporada de alts", "dominance",
+    # ── Preguntas de educación financiera ─────────────────────────────────────
+    "que es", "qué es", "como funciona", "cómo funciona", "explica",
+    "explícame", "diferencia entre", "para que sirve", "cuál es mejor",
+    "cual es mejor", "ventajas", "desventajas", "riesgo de",
 }
 _OFFTOPIC_KEYWORDS = {
     "receta", "cocinar", "cocina", "pasta", "arroz", "pollo", "cena", "almuerzo",
     "fútbol", "baloncesto", "tenis", "partido", "gol", "deporte", "liga",
     "película", "serie", "netflix", "canción", "música", "artista", "concierto",
-    "tiempo", "lluvia", "temperatura", "clima", "meteorología",
-    "política", "elecciones", "presidente", "gobierno", "ministro",
-    "chiste", "broma", "historia corta", "cuéntame un",
+    "lluvia", "temperatura", "clima", "meteorología",
+    "elecciones", "presidente", "gobierno", "ministro",
+    "chiste", "broma",
     "amor", "novia", "novio", "relación", "pareja", "citas",
     "medicina", "síntoma", "enfermedad", "doctor", "pastilla",
-    "traducción", "traduce al", "en inglés", "en francés",
     "poema", "redacción", "ensayo literario",
 }
 
@@ -171,6 +201,28 @@ _AUTONOMO_STATUS_RE = _re.compile(
 )
 
 
+# Detecta preguntas de tipo "dónde/qué/cuánto invertir" sin símbolo específico
+_CONSEJO_RE = _re.compile(
+    r'\b('
+    r'donde\s+(invertir|poner|meter|comprar)|'
+    r'qu[eé]\s+(comprar|invertir|recomiendas?)|'
+    r'cu[aá]l\s+(es\s+mejor|recomiendas?|comprar[ií]as?)|'
+    r'mejor\s+(opci[oó]n|activo|cripto|inversi[oó]n|setup|oportunidad)|'
+    r'oportunidades?\s+(ahora|hoy|del?\s+mercado)|'
+    r'qu[eé]\s+(est[aá]\s+bien|tiene\s+buen|tiene\s+mejor)|'
+    r'c[oó]mo\s+invierto|'
+    r'd[oó]nde\s+invierto|'
+    r'recomiendas?\s+invertir|'
+    r'cu[aá]nto\s+(invierto|pongo|meto|arriesgo)|'
+    r'cu[aá]l\s+tiene\s+(mejor|m[aá]s)\s+(setup|conviction|señal|momentum)|'
+    r'qu[eé]\s+(activos?|criptos?|monedas?)\s+(comprar[ií]as?|recomiendas?)|'
+    r'mejor\s+momento\s+para|'
+    r'vale\s+la\s+pena\s+invertir|'
+    r'merece\s+la\s+pena'
+    r')\b',
+    _re.I
+)
+
 def _detectar_comando_autonomo(mensaje: str) -> str | None:
     if _AUTONOMO_ON_RE.search(mensaje):  return "activar"
     if _AUTONOMO_OFF_RE.search(mensaje): return "desactivar"
@@ -214,6 +266,11 @@ async def chat_stream(
     es_nueva_sesion = not body.historial
     perfil   = registrar_sesion(user_id) if es_nueva_sesion else obtener_perfil(user_id)
     simbolos = detectar_simbolos(body.mensaje)
+
+    # Auto-fetch top símbolos cuando la pregunta es de tipo consejo sin símbolo concreto
+    if not simbolos and _CONSEJO_RE.search(body.mensaje):
+        simbolos = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+
     perfil   = actualizar_perfil_desde_mensaje(user_id, body.mensaje, simbolos)
 
     _PALABRAS_CARTERA = {
@@ -362,11 +419,15 @@ async def chat_stream(
             elif analisis_map:
                 llm_instruccion = "Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
             else:
-                llm_instruccion = "Responde directamente con datos concretos y criterio propio. Máximo 3 líneas."
+                llm_instruccion = (
+                    "Responde con criterio propio y números concretos. "
+                    "NUNCA uses frases como 'no puedo dar consejos', 'consulta un profesional' o 'depende'. "
+                    "Da tu recomendación directamente. Máximo 3 líneas."
+                )
 
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "system", "content": "Sin markdown. Sin bullets. " + llm_instruccion},
+                {"role": "system", "content": "Sin markdown. Sin bullets. Sin disclaimers. " + llm_instruccion},
             ]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
