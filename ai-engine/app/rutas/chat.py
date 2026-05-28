@@ -491,10 +491,31 @@ async def chat_stream(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
-                options={"temperature": 0.65, "num_predict": 400, "num_ctx": 4096, "stop": ["\n\n\n\n"]},
+                options={
+                    "temperature": 0.65,
+                    "num_predict": 400,
+                    "num_ctx": 4096,
+                    "stop": ["\n\n\n\n", "<|assistant|>", "<|system|>", "<|user|>", "<|end|>", "<|endoftext|>"],
+                },
             )
             async for chunk in stream:
                 content = chunk["message"]["content"]
+                if not content:
+                    continue
+                # Filtrar tokens de control del chat template (fuga de Phi-3.5)
+                content = _re.sub(
+                    r'<\|(?:assistant|system|user|end|endoftext|im_start|im_end)[^|]*\|>',
+                    '', content
+                )
+                # Filtrar disclaimers finales que el modelo puede añadir
+                if _re.search(
+                    r'(ajusta\s+posiciones\s+según|tolerancia\s+al\s+riesgo|'
+                    r'estas\s+recomendaciones\s+se\s+basan|'
+                    r'consult[ae]\s+(con\s+)?un\s+profesional|'
+                    r'no\s+(es|son)\s+(un\s+)?consejo)',
+                    content, _re.I
+                ):
+                    continue
                 if content:
                     respuesta_completa.append(content)
                     yield f"data: {json.dumps({'content': content})}\n\n"

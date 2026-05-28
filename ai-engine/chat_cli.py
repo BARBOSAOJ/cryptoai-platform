@@ -52,7 +52,7 @@ def c(color, text): return f"{color}{text}{RESET}"
 logging.getLogger("ai-engine").setLevel(logging.CRITICAL)
 print(c(DIM, "  Iniciando BT..."), end="\r", flush=True)
 
-from app.bt.config   import SYMBOL_MAP, SYSTEM_PROMPT, BT_MODEL
+from app.bt.config   import SYMBOL_MAP, SYSTEM_PROMPT_CLI as SYSTEM_PROMPT, BT_MODEL
 from app.bt.detectar import detectar_simbolos as _detectar_simbolos, detectar_intencion_trade as _detectar_intencion_trade
 from app.bt.contexto import obtener_contexto_mercado as _obtener_contexto_mercado
 from app.bt.historial import guardar_prediccion, obtener_track_record
@@ -155,14 +155,23 @@ async def _responder(mensaje: str) -> None:
     respuesta_completa = ""
     try:
         import ollama
+        import re as _re
         stream = ollama.chat(
             model=BT_MODEL,
             messages=messages,
             stream=True,
-            options={"temperature": 0.7, "num_predict": 1024},
+            options={
+                "temperature": 0.65,
+                "num_predict": 400,
+                "num_ctx": 4096,
+                "stop": ["\n\n\n\n", "<|assistant|>", "<|system|>", "<|user|>", "<|end|>", "<|endoftext|>"],
+            },
         )
         for chunk in stream:
             content = chunk["message"]["content"]
+            if not content:
+                continue
+            content = _re.sub(r'<\|(?:assistant|system|user|end|endoftext|im_start|im_end)[^|]*\|>', '', content)
             if content:
                 print(content, end="", flush=True)
                 respuesta_completa += content
