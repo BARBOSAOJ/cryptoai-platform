@@ -55,7 +55,10 @@ export default function MercadoGlobal({ marketData, aiInsights, onSymbolClick }:
       const rawPrice = restData?.price ?? sseData?.price ?? 0
       const price    = parseFloat(String(rawPrice)) || 0
       // change only comes from SSE (REST endpoint doesn't include it)
-      const change   = sseData?.change ?? null
+      const rawChange = sseData?.change
+      const change    = rawChange !== undefined && rawChange !== null
+        ? parseFloat(String(rawChange)) || null
+        : null
       const ai       = aiInsights[sym]
       return {
         symbol:     sym,

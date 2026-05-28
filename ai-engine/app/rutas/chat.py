@@ -491,11 +491,15 @@ async def stream_alertas(token: Optional[str] = Query(None)):
     user_id = extraer_user_id(token) if token else "anon"
 
     async def generate():
+        yield ": connected\n\n"  # primer chunk garantiza que los CORS headers se envíen
         while True:
-            alerta = consumir_alerta(user_id)
-            if alerta:
-                yield f"data: {json.dumps(alerta)}\n\n"
-            else:
+            try:
+                alerta = consumir_alerta(user_id)
+                if alerta:
+                    yield f"data: {json.dumps(alerta)}\n\n"
+                else:
+                    yield ": heartbeat\n\n"
+            except Exception:
                 yield ": heartbeat\n\n"
             await asyncio.sleep(4)
 

@@ -243,7 +243,9 @@ export default function ChartPanel({ symbol, insight }: Props) {
     ;(series as any)._priceLines = lines
 
     return () => {
-      try { lines.forEach(pl => series.removePriceLine(pl)) } catch {}
+      if (chartRef.current) {
+        try { lines.forEach(pl => series.removePriceLine(pl)) } catch {}
+      }
       ;(series as any)._priceLines = []
     }
   }, [insight, showAI, type])
