@@ -14,6 +14,7 @@ import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 import type { PosicionAbierta, EntradaLog } from './hooks/useAgenteAutonomo'
 import Settings from './components/configuracion/Settings'
 import AlertasPanel from './components/terminal/AlertasPanel'
+import TrendingRadar from './components/terminal/TrendingRadar'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -448,15 +449,18 @@ export default function App() {
                       </motion.div>
                     )}
                   </div>
-                  <AnimatePresence>
-                    {alertFlash && (
-                      <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} style={{ marginLeft:'auto', padding:'0 20px', flexShrink:0 }}>
-                        <div style={{ fontSize:9, color:'var(--green)', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,208,96,0.08)', border:'1px solid rgba(0,208,96,0.2)', padding:'4px 10px', borderRadius:6, boxShadow:'0 0 12px rgba(0,208,96,0.2)', animation: 'pulse 1s infinite' }}>
-                          SEÑAL COMPRA DETECTADA
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, padding:'0 14px', flexShrink:0 }}>
+                    <TrendingRadar onSymbolClick={setCurrentSymbol} />
+                    <AnimatePresence>
+                      {alertFlash && (
+                        <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+                          <div style={{ fontSize:9, color:'var(--green)', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,208,96,0.08)', border:'1px solid rgba(0,208,96,0.2)', padding:'4px 10px', borderRadius:6, boxShadow:'0 0 12px rgba(0,208,96,0.2)', animation: 'pulse 1s infinite' }}>
+                            SEÑAL COMPRA DETECTADA
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </div>
 
