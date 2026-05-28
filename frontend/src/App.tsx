@@ -16,6 +16,7 @@ import Settings from './components/configuracion/Settings'
 import AlertasPanel from './components/terminal/AlertasPanel'
 import TrendingRadar from './components/terminal/TrendingRadar'
 import NewsPanel from './components/terminal/NewsPanel'
+import MercadoGlobal from './components/mercado/MercadoGlobal'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -92,7 +93,7 @@ export default function App() {
   const [refreshInterval, setRefreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]     = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
-  const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'MERCADO' | 'BOT' | 'CONFIG'>('TRADE')
   const [rightTab, setRightTab]         = useState<'CHAT' | 'NOTICIAS'>('CHAT')
   const [dataError, setDataError]       = useState<string | null>(null)
   const [aiHealth, setAiHealth]         = useState<{ lstm: boolean; finbert: boolean } | null>(null)
@@ -504,6 +505,19 @@ export default function App() {
                 </div>
               </div>
             </>
+          )}
+
+          {/* ── MERCADO TAB ───────────────────────────────────────────────── */}
+          {activeTab === 'MERCADO' && (
+            <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
+              <ErrorBoundary fallback="Error en mercado">
+                <MercadoGlobal
+                  marketData={marketData}
+                  aiInsights={aiInsights}
+                  onSymbolClick={(sym) => { setCurrentSymbol(sym); setActiveTab('TRADE') }}
+                />
+              </ErrorBoundary>
+            </div>
           )}
 
           {/* ── PORTFOLIO TAB ─────────────────────────────────────────────── */}
