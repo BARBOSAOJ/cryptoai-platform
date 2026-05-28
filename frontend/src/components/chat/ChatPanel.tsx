@@ -48,6 +48,8 @@ export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelPr
   const [analizando, setAnalizando] = useState(false)
   const [ollamaOk, setOllamaOk]    = useState<boolean | null>(null)
   const [saludando, setSaludando]   = useState(false)
+  const [autonomo, setAutonomo]     = useState(false)
+  const [cicloActivo, setCicloActivo] = useState(false)
   const bottomRef                   = useRef<HTMLDivElement>(null)
   const inputRef                    = useRef<HTMLTextAreaElement>(null)
   const abortRef                    = useRef<AbortController | null>(null)
@@ -100,6 +102,94 @@ export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelPr
     }).catch(() => setMensajes([]))
       .finally(() => setSaludando(false))
   }, [])
+
+  // Estado autónomo inicial
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    fetch(`${API_AI}/chat/autonomo/estado`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()).then(d => setAutonomo(d.activo ?? false)).catch(() => {})
+  }, [])
+
+  // Ciclo autónomo cada 5 minutos cuando está activo
+  useEffect(() => {
+    if (!autonomo) return
+    const runCiclo = async () => {
+      const token = localStorage.getItem('token')
+      if (!token) return
+      setCicloActivo(true)
+      try {
+        const res = await fetch(`${API_AI}/chat/autonomo/ciclo`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (data.operaciones?.length > 0) {
+          data.operaciones.forEach((op: any) => {
+            setMensajes(prev => [...prev, {
+              role: 'alerta',
+              content: `BT ${op.tipo === 'BUY' ? 'abrió' : 'cerró'} ${op.symbol.replace('USDT','')} $${op.amount.toFixed(2)} — ${op.razon}`,
+              ts: new Date().toISOString(),
+              urgencia: 2,
+            }])
+          })
+        }
+      } catch {} finally {
+        setCicloActivo(false)
+      }
+    }
+    runCiclo()
+    const t = setInterval(runCiclo, 5 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [autonomo])
+
+  const toggleAutonomo = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const cmd = autonomo ? 'desactiva modo autónomo' : 'activa modo autónomo'
+    setAutonomo(!autonomo)
+    // Envía como mensaje al chat para que BT confirme
+    setMensajes(prev => [...prev, { role: 'user', content: cmd, ts: new Date().toISOString() }])
+    setCargando(true)
+    try {
+      const res = await fetch(`${API_AI}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mensaje: cmd, historial: [] }),
+      })
+      if (!res.ok || !res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      const btMsg: Mensaje = { role: 'assistant', content: '', ts: new Date().toISOString() }
+      setMensajes(prev => [...prev, btMsg])
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const raw = line.slice(5).trim()
+          if (raw === '[DONE]') break
+          try {
+            const chunk = JSON.parse(raw)
+            if (chunk.content) {
+              setMensajes(prev => {
+                const copy = [...prev]
+                copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + chunk.content }
+                return copy
+              })
+            }
+          } catch {}
+        }
+      }
+    } catch {} finally {
+      setCargando(false)
+    }
+  }
 
   // Alertas SSE
   useEffect(() => {
@@ -266,6 +356,26 @@ export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelPr
             LSTM · Fear&amp;Greed · Reddit · RAG
           </div>
         </div>
+
+        {/* Botón modo autónomo */}
+        <motion.button
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={toggleAutonomo}
+          title={autonomo ? 'BT autónomo activo — click para desactivar' : 'Activar modo autónomo'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+            padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+            background: autonomo ? 'rgba(251,146,60,0.15)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${autonomo ? 'rgba(251,146,60,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            color: autonomo ? '#fb923c' : 'var(--text-4)',
+            transition: 'all 0.15s',
+          }}
+        >
+          <Zap size={11} strokeWidth={2.5} style={{ animation: cicloActivo ? 'spin 1s linear infinite' : 'none' }} />
+          <span style={{ fontSize: 9, fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px' }}>
+            {autonomo ? 'AUTO' : 'MANUAL'}
+          </span>
+        </motion.button>
 
         {onClose && (
           <button onClick={onClose} style={{

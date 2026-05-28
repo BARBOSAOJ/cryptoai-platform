@@ -27,6 +27,11 @@ from app.bt.cartera import (
 )
 from app.bt.calibracion import calcular_calibracion, obtener_calibracion_por_simbolo
 from app.bt.historial import obtener_track_record_global
+from app.bt.autonomo import (
+    activar_autonomo, desactivar_autonomo, es_autonomo,
+    evaluar_entrada, evaluar_salidas, registrar_decision, obtener_log_autonomo,
+)
+import httpx as _httpx
 
 router = APIRouter(prefix="/chat")
 
@@ -153,6 +158,27 @@ _NAV_RE = _re.compile(
     _re.I | _re.X,
 )
 
+_AUTONOMO_ON_RE  = _re.compile(
+    r'\b(activa|activar|enciende|encender|modo\s+autonomo|opera\s+solo|operar\s+solo|'
+    r'bt\s+autonomo|modo\s+auto|auto\s+trading|autotrading)\b', _re.I
+)
+_AUTONOMO_OFF_RE = _re.compile(
+    r'\b(desactiva|desactivar|apaga|apagar|para|detener|modo\s+manual|'
+    r'manual|stop\s+auto|deja\s+de\s+operar)\b', _re.I
+)
+_AUTONOMO_STATUS_RE = _re.compile(
+    r'\b(estado|status|como\s+vas|cuanto\s+llevas|operaciones\s+auto)\b', _re.I
+)
+
+
+def _detectar_comando_autonomo(mensaje: str) -> str | None:
+    if _AUTONOMO_ON_RE.search(mensaje):  return "activar"
+    if _AUTONOMO_OFF_RE.search(mensaje): return "desactivar"
+    if _AUTONOMO_STATUS_RE.search(mensaje) and _re.search(r'\bbt\b|\bautonomo\b', mensaje, _re.I):
+        return "estado"
+    return None
+
+
 def _accion_ui(mensaje: str, simbolos: list) -> dict | None:
     """Si el mensaje pide ver un activo en el chart, devuelve el evento de acción UI."""
     from app.bt.detectar import _normalizar
@@ -226,6 +252,26 @@ async def chat_stream(
             if ui_action:
                 yield f"data: {json.dumps(ui_action)}\n\n"
 
+            # ── Comandos de modo autónomo ─────────────────────────────────────
+            cmd_autonomo = _detectar_comando_autonomo(body.mensaje)
+            if cmd_autonomo and token:
+                if cmd_autonomo == "activar":
+                    activar_autonomo(user_id)
+                    resp = "Modo autónomo activado. Voy a monitorizar el mercado y operar cuando vea señales sólidas (conviction ≥ 72). Te notificaré cada operación."
+                elif cmd_autonomo == "desactivar":
+                    desactivar_autonomo(user_id)
+                    resp = "Modo autónomo desactivado. Solo opero cuando me lo pidas explícitamente."
+                elif cmd_autonomo == "estado":
+                    activo = es_autonomo(user_id)
+                    log    = obtener_log_autonomo(user_id)
+                    ops    = len(log)
+                    resp   = f"Modo autónomo: {'ACTIVO ✓' if activo else 'INACTIVO'}. {ops} operaciones autónomas registradas."
+                yield f"data: {json.dumps({'content': resp})}\n\n"
+                guardar_turno(user_id, "user",      body.mensaje)
+                guardar_turno(user_id, "assistant", resp)
+                yield "data: [DONE]\n\n"
+                return
+
             # ── Guardrail de dominio ──────────────────────────────────────────
             if not _es_consulta_financiera(body.mensaje):
                 respuesta = "Eso no es mi departamento. ¿Qué quieres revisar en el mercado hoy?"
@@ -254,20 +300,34 @@ async def chat_stream(
             if token:
                 intencion = detectar_intencion_trade(body.mensaje)
                 if intencion:
-                    if not intencion.get("amount_usd") and riesgo.get("max_posicion", 0) > 0:
-                        intencion["amount_usd"] = riesgo["max_posicion"]
                     sym = intencion["symbol"]
                     a   = analisis_map.get(sym)
-                    if a:
-                        resultado = await ejecutar_orden(
-                            symbol=sym, side=intencion["side"],
-                            amount_usd=intencion["amount_usd"],
-                            price=float(a["entry_price"]),
-                            signal=a.get("signal", "MANTENER"),
-                            confidence=a.get("confidence", "0%"),
-                            token=token,
+
+                    # Cierre de posición completa (sin monto especificado)
+                    if intencion.get("full_position"):
+                        posicion_actual = next(
+                            (p for p in datos_stats.get("positions", []) if p.get("symbol") == sym), None
                         )
-                        orden_resultado = {**intencion, "price": float(a["entry_price"]), "resultado": resultado}
+                        if posicion_actual:
+                            precio_actual = float(a["entry_price"]) if a else posicion_actual.get("currentPrice", 0)
+                            amount_total  = posicion_actual.get("quantity", 0) * precio_actual
+                            intencion["amount_usd"] = amount_total
+                        else:
+                            intencion = None  # no hay posición que cerrar
+
+                    if intencion:
+                        if not intencion.get("amount_usd") and riesgo.get("max_posicion", 0) > 0:
+                            intencion["amount_usd"] = riesgo["max_posicion"]
+                        if a and intencion.get("amount_usd", 0) > 0:
+                            resultado = await ejecutar_orden(
+                                symbol=sym, side=intencion["side"],
+                                amount_usd=intencion["amount_usd"],
+                                price=float(a["entry_price"]),
+                                signal=a.get("signal", "MANTENER"),
+                                confidence=a.get("confidence", "0%"),
+                                token=token,
+                            )
+                            orden_resultado = {**intencion, "price": float(a["entry_price"]), "resultado": resultado}
 
             # ── Cabecera determinista (cuando hay datos de mercado) ───────────
             # Las líneas de símbolo·precio·señal·conviction se construyen
@@ -483,6 +543,101 @@ async def rendimiento_bt():
         "calibracion":         calibracion,
         "por_simbolo":         por_simbolo,
     }
+
+
+@router.get("/autonomo/estado")
+async def autonomo_estado(authorization: Optional[str] = Header(None)):
+    """Estado del modo autónomo y log de operaciones recientes."""
+    token   = authorization.replace("Bearer ", "").strip() if authorization else None
+    user_id = extraer_user_id(token) if token else "anon"
+    return {
+        "activo": es_autonomo(user_id),
+        "log":    obtener_log_autonomo(user_id),
+    }
+
+
+@router.post("/autonomo/ciclo")
+async def autonomo_ciclo(authorization: Optional[str] = Header(None)):
+    """
+    Ejecuta un ciclo autónomo para el usuario: evalúa entradas y salidas.
+    Llamado desde el frontend cada N minutos cuando el modo está activo.
+    """
+    token   = authorization.replace("Bearer ", "").strip() if authorization else None
+    user_id = extraer_user_id(token) if token else "anon"
+
+    if not token or not es_autonomo(user_id):
+        return {"operaciones": [], "mensaje": "modo autónomo no activo"}
+
+    from app.analisis import realizar_analisis
+    from app.indicadores import obtener_velas_binance
+    from app.config import redis_client
+    import time as _time
+
+    def _push_alerta(uid: str, mensaje: str, urgencia: int = 2):
+        if not redis_client:
+            return
+        import json as _json
+        payload = _json.dumps({"mensaje": mensaje, "urgencia": urgencia, "ts": _time.time()})
+        redis_client.rpush(f"bt:alertas:{uid}", payload)
+        redis_client.expire(f"bt:alertas:{uid}", 7200)
+
+    SIMBOLOS_WATCH = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT"]
+    operaciones: list[dict] = []
+
+    try:
+        cartera, stats = await obtener_estado_cartera(token)
+        if not cartera:
+            return {"operaciones": [], "mensaje": "no se pudo obtener cartera"}
+
+        analisis_map: dict = {}
+        for sym in SIMBOLOS_WATCH:
+            try:
+                data = obtener_velas_binance(sym, limit=60)
+                if len(data["prices"]) >= 5:
+                    a = await realizar_analisis(sym, data["prices"][-1], data["prices"], data["volumes"])
+                    analisis_map[sym] = a
+            except Exception:
+                pass
+
+        # ── Evaluar salidas ────────────────────────────────────────────────────
+        posiciones = stats.get("positions", [])
+        salidas = evaluar_salidas(posiciones, analisis_map)
+        for sym, precio, razon in salidas:
+            pos = next((p for p in posiciones if p.get("symbol") == sym), None)
+            if not pos:
+                continue
+            amount_usd = pos.get("quantity", 0) * precio
+            resultado  = await ejecutar_orden(
+                symbol=sym, side="SELL", amount_usd=amount_usd,
+                price=precio, signal="BT_AUTO_SALIDA", confidence="auto",
+                token=token,
+            )
+            if resultado["status"] == 200:
+                registrar_decision(user_id, "SELL", sym, amount_usd, razon)
+                _push_alerta(user_id, f"BT cerró {sym.replace('USDT','')} — {razon}")
+                operaciones.append({"tipo": "SELL", "symbol": sym, "amount": amount_usd, "razon": razon})
+
+        # ── Evaluar entradas ───────────────────────────────────────────────────
+        # Refresca cartera tras posibles ventas
+        cartera, stats = await obtener_estado_cartera(token)
+        for sym, a in analisis_map.items():
+            abrir, amount, razon = evaluar_entrada(sym, a, cartera, stats)
+            if not abrir:
+                continue
+            resultado = await ejecutar_orden(
+                symbol=sym, side="BUY", amount_usd=amount,
+                price=float(a["entry_price"]), signal=a.get("signal", ""),
+                confidence=a.get("confidence", "0%"), token=token,
+            )
+            if resultado["status"] == 200:
+                registrar_decision(user_id, "BUY", sym, amount, razon)
+                _push_alerta(user_id, f"BT abrió {sym.replace('USDT','')} — {razon}")
+                operaciones.append({"tipo": "BUY", "symbol": sym, "amount": amount, "razon": razon})
+
+    except Exception as e:
+        logger.error(f"Error ciclo autónomo {user_id}: {e}")
+
+    return {"operaciones": operaciones, "mensaje": f"{len(operaciones)} operaciones ejecutadas"}
 
 
 @router.get("/alertas")

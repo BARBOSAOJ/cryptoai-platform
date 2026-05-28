@@ -56,8 +56,8 @@ def detectar_simbolos(texto: str) -> list[str]:
 def detectar_intencion_trade(texto: str) -> Optional[dict]:
     """
     Detecta si el mensaje expresa intención de comprar o vender.
-    Devuelve {side, amount_usd, symbol} o None.
-    Normaliza acentos antes de aplicar los patrones.
+    Devuelve {side, amount_usd, symbol, full_position} o None.
+    full_position=True cuando se pide cerrar la posición completa sin especificar monto.
     """
     norm = _normalizar(texto)
 
@@ -79,21 +79,25 @@ def detectar_intencion_trade(texto: str) -> Optional[dict]:
     if not side:
         return None
 
-    m = re.search(_AMOUNT_RE, norm)
-    if not m:
-        return None
-    # Grupos: 1=$100  2=Nk  3=N dolares/usd/€
-    raw = m.group(1) or m.group(2) or m.group(3)
-    if not raw:
-        return None
-    amount_usd = float(raw.replace(',', '.'))
-    if m.group(2):          # sufijo 'k' → multiplicar por 1000
-        amount_usd *= 1000
-    if amount_usd <= 0:
-        return None
-
     simbolos = detectar_simbolos(texto)
     if not simbolos:
         return None
 
-    return {"side": side, "amount_usd": amount_usd, "symbol": simbolos[0]}
+    # Buscar monto explícito
+    m = re.search(_AMOUNT_RE, norm)
+    if m:
+        raw = m.group(1) or m.group(2) or m.group(3)
+        if raw:
+            amount_usd = float(raw.replace(',', '.'))
+            if m.group(2):
+                amount_usd *= 1000
+            if amount_usd > 0:
+                return {"side": side, "amount_usd": amount_usd,
+                        "symbol": simbolos[0], "full_position": False}
+
+    # Sin monto → solo válido para SELL (cerrar posición completa)
+    if side == "SELL":
+        return {"side": "SELL", "amount_usd": 0.0,
+                "symbol": simbolos[0], "full_position": True}
+
+    return None
