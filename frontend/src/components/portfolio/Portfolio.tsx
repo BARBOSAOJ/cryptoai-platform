@@ -261,7 +261,9 @@ export default function Portfolio({ user, refreshTrigger = 0, marketData = {} }:
             </div>
           </div>
 
-          <p style={{ ...sectionLabel, marginTop: '28px', marginBottom: '12px' }}>Posiciones abiertas</p>
+          <DonutChart positions={posicionesEnTiempoReal} balance={balance} />
+
+          <p style={{ ...sectionLabel, marginTop: '16px', marginBottom: '12px' }}>Posiciones abiertas</p>
           <PositionsTable
             positions={posicionesEnTiempoReal}
             loading={loading}
@@ -299,6 +301,91 @@ export default function Portfolio({ user, refreshTrigger = 0, marketData = {} }:
           onExportarCSV={handleExportarCSV}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Donut Chart ─────────────────────────────────────────────────────────────
+
+const DONUT_COLORS = ['#818cf8','#2ebd85','#f6465d','#fb923c','#38bdf8','#a78bfa','#34d399','#f472b6']
+
+function DonutChart({ positions, balance }: {
+  positions: Array<{ symbol: string; coin: string; value: number }>
+  balance: number
+}) {
+  const total = positions.reduce((s, p) => s + p.value, 0) + balance
+  if (total <= 0 || positions.length === 0) return null
+
+  const size   = 140
+  const stroke = 18
+  const r      = (size - stroke) / 2
+  const cx     = size / 2
+  const cy     = size / 2
+  const circum = 2 * Math.PI * r
+
+  const slices: Array<{ symbol: string; coin: string; value: number; pct: number; color: string }> = []
+  if (balance > 0) {
+    slices.push({ symbol: 'USDT', coin: 'USD', value: balance, pct: balance / total, color: '#2c4268' })
+  }
+  positions.forEach((p, i) => {
+    slices.push({ ...p, pct: p.value / total, color: DONUT_COLORS[i % DONUT_COLORS.length] })
+  })
+
+  let offset = 0
+  const paths = slices.map(s => {
+    const dash    = s.pct * circum
+    const current = offset
+    offset += dash
+    return { ...s, dash, gap: circum - dash, current }
+  })
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '20px 0 8px' }}>
+      {/* SVG donut */}
+      <div style={{ flexShrink: 0, position: 'relative', width: size, height: size }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          {/* Background ring */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#0d1a2e" strokeWidth={stroke} />
+          {paths.map((s, i) => (
+            <circle
+              key={i}
+              cx={cx} cy={cy} r={r}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={stroke}
+              strokeDasharray={`${s.dash} ${s.gap}`}
+              strokeDashoffset={-s.current}
+              strokeLinecap="butt"
+            />
+          ))}
+        </svg>
+        {/* Center label */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: 9, color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginBottom: 2 }}>TOTAL</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#ddeeff', fontFamily: 'JetBrains Mono, monospace' }}>
+            ${total >= 1000 ? (total / 1000).toFixed(1) + 'k' : total.toFixed(0)}
+          </div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+        {paths.map(s => (
+          <div key={s.symbol} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: '#8baabf', flex: 1 }}>{s.coin}</span>
+            <span style={{ fontSize: 10, color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+              {(s.pct * 100).toFixed(1)}%
+            </span>
+            <span style={{ fontSize: 10, color: '#3d5470', fontFamily: 'JetBrains Mono, monospace', width: 60, textAlign: 'right' }}>
+              ${s.value >= 1000 ? (s.value / 1000).toFixed(1) + 'k' : s.value.toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
