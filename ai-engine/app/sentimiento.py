@@ -64,8 +64,12 @@ def obtener_noticias(symbol: str) -> list:
 
 def analizar_titulares(raw_news: list) -> tuple:
     from app.modelos import sentiment_model, tokenizer
-    if not raw_news or not sentiment_model:
+    if not raw_news:
         return [], 0.0
+    if not sentiment_model:
+        results = [{"title": t, "source": s, "impact": 0.0, "label": "NEUTRAL"}
+                   for t, s in raw_news]
+        return results, 0.0
     try:
         import torch
         titles = [item[0] for item in raw_news]

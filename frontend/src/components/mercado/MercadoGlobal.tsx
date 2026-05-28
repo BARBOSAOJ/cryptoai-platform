@@ -49,12 +49,18 @@ export default function MercadoGlobal({ marketData, aiInsights, onSymbolClick }:
 
   const buildRows = useCallback((prices: Record<string, any>) => {
     return COINS.map(sym => {
-      const md = prices[sym] ?? marketData[sym]
-      const ai = aiInsights[sym]
+      const restData = prices[sym]
+      const sseData  = marketData[sym]
+      // /prices returns price as string; SSE has it as number
+      const rawPrice = restData?.price ?? sseData?.price ?? 0
+      const price    = parseFloat(String(rawPrice)) || 0
+      // change only comes from SSE (REST endpoint doesn't include it)
+      const change   = sseData?.change ?? null
+      const ai       = aiInsights[sym]
       return {
         symbol:     sym,
-        price:      md?.price ?? 0,
-        change:     md?.change ?? null,
+        price,
+        change,
         signal:     ai?.signal ?? null,
         conviction: ai?.conviction_score ?? null,
       }
