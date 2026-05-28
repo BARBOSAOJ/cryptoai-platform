@@ -15,6 +15,7 @@ import type { PosicionAbierta, EntradaLog } from './hooks/useAgenteAutonomo'
 import Settings from './components/configuracion/Settings'
 import AlertasPanel from './components/terminal/AlertasPanel'
 import TrendingRadar from './components/terminal/TrendingRadar'
+import NewsPanel from './components/terminal/NewsPanel'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -92,6 +93,7 @@ export default function App() {
   const [alertFlash, setAlertFlash]     = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [rightTab, setRightTab]         = useState<'CHAT' | 'NOTICIAS'>('CHAT')
   const [dataError, setDataError]       = useState<string | null>(null)
   const [aiHealth, setAiHealth]         = useState<{ lstm: boolean; finbert: boolean } | null>(null)
 
@@ -464,15 +466,42 @@ export default function App() {
                 </div>
               </div>
 
-              {/* RIGHT: BT chat */}
-              <div style={{ width:400, flexShrink:0, borderLeft:'1px solid var(--border)' }}>
-                <ErrorBoundary fallback="Error en BT">
-                  <ChatPanel
-                    onAction={(a) => {
-                      if (a.action === 'change_symbol' && a.symbol) setCurrentSymbol(a.symbol)
-                    }}
-                  />
-                </ErrorBoundary>
+              {/* RIGHT: BT chat / Noticias */}
+              <div style={{ width:400, flexShrink:0, borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column' }}>
+                {/* Tab bar */}
+                <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
+                  {(['CHAT', 'NOTICIAS'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setRightTab(tab)}
+                      style={{
+                        flex:1, padding:'10px 0', fontSize:9, fontFamily:'JetBrains Mono, monospace',
+                        letterSpacing:'1px', cursor:'pointer', border:'none',
+                        background: rightTab === tab ? 'rgba(129,140,248,0.07)' : 'transparent',
+                        color: rightTab === tab ? '#818cf8' : '#2c4268',
+                        borderBottom: rightTab === tab ? '2px solid #818cf8' : '2px solid transparent',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
+                  {rightTab === 'CHAT' ? (
+                    <ErrorBoundary fallback="Error en BT">
+                      <ChatPanel
+                        onAction={(a) => {
+                          if (a.action === 'change_symbol' && a.symbol) setCurrentSymbol(a.symbol)
+                        }}
+                      />
+                    </ErrorBoundary>
+                  ) : (
+                    <ErrorBoundary fallback="Error en noticias">
+                      <NewsPanel currentSymbol={currentSymbol} />
+                    </ErrorBoundary>
+                  )}
+                </div>
               </div>
             </>
           )}
