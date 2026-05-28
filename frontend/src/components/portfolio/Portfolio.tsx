@@ -39,7 +39,7 @@ interface PortfolioProps {
   marketData?: Record<string, any>
 }
 
-type Tab = 'Resumen' | 'Posiciones' | 'Estadísticas'
+type Tab = 'Resumen' | 'Posiciones' | 'Estadísticas' | 'Historial'
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ export default function Portfolio({ user, refreshTrigger = 0, marketData = {} }:
       {/* Header con tabs y botón refresh */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ display: 'flex', gap: '4px' }}>
-          {(['Resumen', 'Posiciones', 'Estadísticas'] as Tab[]).map(tab => (
+          {(['Resumen', 'Posiciones', 'Estadísticas', 'Historial'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -301,8 +301,180 @@ export default function Portfolio({ user, refreshTrigger = 0, marketData = {} }:
           onExportarCSV={handleExportarCSV}
         />
       )}
+
+      {/* ── TAB: Historial ── */}
+      {activeTab === 'Historial' && <TabHistorial />}
     </div>
   )
+}
+
+// ─── Tab Historial ────────────────────────────────────────────────────────────
+
+interface TradeRecord {
+  symbol:    string
+  side:      'BUY' | 'SELL'
+  quantity:  number
+  price:     number
+  total:     number
+  timestamp: string
+  pnl?:      number
+}
+
+const PAGE_SIZE = 25
+
+function TabHistorial() {
+  const [trades, setTrades]     = useState<TradeRecord[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [filterSym, setFilterSym] = useState('ALL')
+  const [filterSide, setFilterSide] = useState<'ALL' | 'BUY' | 'SELL'>('ALL')
+  const [page, setPage]         = useState(0)
+
+  useEffect(() => {
+    apiClient.get('/portfolio/trades?limit=200')
+      .then(res => setTrades(res.data ?? []))
+      .catch(() => setTrades([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const symbols = ['ALL', ...Array.from(new Set(trades.map(t => t.symbol.replace('USDT',''))))]
+
+  const filtered = trades.filter(t => {
+    const sym = t.symbol.replace('USDT','')
+    if (filterSym  !== 'ALL' && sym !== filterSym)          return false
+    if (filterSide !== 'ALL' && t.side !== filterSide)      return false
+    return true
+  })
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const page_trades = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const handleExport = () => {
+    const header = 'Fecha,Símbolo,Lado,Cantidad,Precio,Total\n'
+    const rows = filtered.map(t =>
+      `${t.timestamp},${t.symbol},${t.side},${t.quantity},${t.price},${t.total}`
+    ).join('\n')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([header + rows], { type: 'text/csv' }))
+    a.download = `historial_${new Date().toISOString().slice(0,10)}.csv`
+    a.click()
+  }
+
+  if (loading) return <div style={emptyStyle}>Cargando historial…</div>
+  if (!trades.length) return <div style={emptyStyle}>Sin trades registrados todavía.</div>
+
+  return (
+    <div>
+      {/* Filters */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select
+          value={filterSym}
+          onChange={e => { setFilterSym(e.target.value); setPage(0) }}
+          style={filterSelectStyle}
+        >
+          {symbols.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {(['ALL','BUY','SELL'] as const).map(s => (
+          <button
+            key={s}
+            onClick={() => { setFilterSide(s); setPage(0) }}
+            style={{
+              ...filterBtnStyle,
+              background:   filterSide === s ? '#111e35' : 'transparent',
+              color:        filterSide === s ? (s === 'BUY' ? '#2ebd85' : s === 'SELL' ? '#f6465d' : '#c8d8ec') : '#2c4268',
+              borderColor:  filterSide === s ? '#1a2f50' : 'transparent',
+            }}
+          >
+            {s === 'ALL' ? 'Todos' : s}
+          </button>
+        ))}
+        <button onClick={handleExport} style={{ ...filterBtnStyle, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Download size={11} strokeWidth={2} />CSV
+        </button>
+        <span style={{ fontSize: 10, color: '#1e3050', fontFamily: 'JetBrains Mono, monospace' }}>
+          {filtered.length} operaciones
+        </span>
+      </div>
+
+      {/* Table */}
+      <div style={{ background: '#091220', border: '1px solid #111e35', borderRadius: 12, overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 100px 100px 100px', padding: '8px 16px', borderBottom: '1px solid #111e35' }}>
+          {['FECHA', 'LADO', 'PRECIO', 'CANTIDAD', 'TOTAL'].map(h => (
+            <div key={h} style={{ fontSize: 9, color: '#1e3050', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.8px', textAlign: h !== 'FECHA' ? 'right' : 'left' }}>{h}</div>
+          ))}
+        </div>
+        {/* Rows */}
+        {page_trades.map((t, i) => {
+          const isBuy = t.side === 'BUY'
+          const sym   = t.symbol.replace('USDT','')
+          const date  = new Date(t.timestamp)
+          const dateStr = `${date.toLocaleDateString('es', { day:'2-digit', month:'2-digit' })} ${date.toLocaleTimeString('es', { hour:'2-digit', minute:'2-digit' })}`
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'grid', gridTemplateColumns: '1fr 60px 100px 100px 100px',
+                padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#ddeeff' }}>{sym}</div>
+                <div style={{ fontSize: 9, color: '#2c4268', fontFamily: 'JetBrains Mono, monospace', marginTop: 1 }}>{dateStr}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
+                  color: isBuy ? '#2ebd85' : '#f6465d',
+                  background: isBuy ? 'rgba(46,189,133,0.1)' : 'rgba(246,70,93,0.1)',
+                  border: `1px solid ${isBuy ? 'rgba(46,189,133,0.25)' : 'rgba(246,70,93,0.25)'}`,
+                  padding: '2px 6px', borderRadius: 4,
+                }}>
+                  {t.side}
+                </span>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: '#8baabf' }}>
+                ${t.price >= 1000 ? t.price.toLocaleString('en', { maximumFractionDigits: 2 }) : t.price.toFixed(4)}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: '#3d5470' }}>
+                {t.quantity.toFixed(6)}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 11, fontWeight: 600, fontFamily: 'JetBrains Mono, monospace', color: isBuy ? '#2ebd85' : '#f6465d' }}>
+                ${t.total.toFixed(2)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14 }}>
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={paginBtnStyle}>‹ Anterior</button>
+          <span style={{ fontSize: 10, color: '#2c4268', fontFamily: 'JetBrains Mono, monospace' }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={paginBtnStyle}>Siguiente ›</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const filterSelectStyle: React.CSSProperties = {
+  background: '#091220', border: '1px solid #111e35', color: '#8baabf',
+  padding: '5px 10px', borderRadius: 8, fontSize: 11,
+  fontFamily: 'Inter, sans-serif', cursor: 'pointer', outline: 'none',
+}
+const filterBtnStyle: React.CSSProperties = {
+  background: 'transparent', border: '1px solid transparent', color: '#2c4268',
+  padding: '5px 12px', borderRadius: 8, fontSize: 11,
+  fontFamily: 'Inter, sans-serif', cursor: 'pointer',
+}
+const paginBtnStyle: React.CSSProperties = {
+  background: '#091220', border: '1px solid #111e35', color: '#2c4268',
+  padding: '5px 14px', borderRadius: 8, fontSize: 11,
+  fontFamily: 'Inter, sans-serif', cursor: 'pointer',
 }
 
 // ─── Donut Chart ─────────────────────────────────────────────────────────────
