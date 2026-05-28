@@ -414,20 +414,37 @@ async def chat_stream(
                 yield f"data: {json.dumps({'content': header_text + chr(10)})}\n\n"
 
             # ── Construcción de mensajes para el LLM ──────────────────────────
+            es_pregunta_consejo = bool(_CONSEJO_RE.search(body.mensaje))
+
             if ui_action and analisis_map:
-                llm_instruccion = "Ya cambiaste el gráfico al activo pedido. Confirma en una frase e incluye el dato más relevante del mercado ahora mismo."
+                llm_instruccion = (
+                    "Ya cambiaste el gráfico al activo pedido. "
+                    "Confirma en una frase natural e incluye el dato más relevante ahora mismo."
+                )
+            elif analisis_map and es_pregunta_consejo:
+                llm_instruccion = (
+                    "El usuario pregunta dónde o cuánto invertir. Con los datos de mercado que tienes arriba, "
+                    "da una respuesta COMPLETA y útil: cuál tiene el mejor setup ahora mismo y por qué, "
+                    "cuánto invertirías (usa los datos de cartera si los tienes), y qué nivel vigilar. "
+                    "Sé directo pero cercano — como si le hablaras a un amigo. "
+                    "Máximo 5 líneas. Sin bullets. Sin disclaimers."
+                )
             elif analisis_map:
-                llm_instruccion = "Añade UNA línea: tu lectura del mercado y el nivel o acción concreta a vigilar."
+                llm_instruccion = (
+                    "Añade tu lectura personal del mercado y la acción concreta a tomar. "
+                    "Con naturalidad, no solo escupas datos — interprétalos. "
+                    "Máximo 2-3 líneas."
+                )
             else:
                 llm_instruccion = (
                     "Responde con criterio propio y números concretos. "
-                    "NUNCA uses frases como 'no puedo dar consejos', 'consulta un profesional' o 'depende'. "
-                    "Da tu recomendación directamente. Máximo 3 líneas."
+                    "NUNCA uses frases como 'no puedo dar consejos', 'consulta un profesional' o 'depende de tu perfil'. "
+                    "Da tu recomendación directamente con tono cercano. Máximo 3 líneas."
                 )
 
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "system", "content": "Sin markdown. Sin bullets. Sin disclaimers. " + llm_instruccion},
+                {"role": "system", "content": "Sin markdown excesivo. Sin disclaimers. " + llm_instruccion},
             ]
 
             ctx_memoria = construir_contexto_memoria(user_id, perfil, es_nueva_sesion)
@@ -474,7 +491,7 @@ async def chat_stream(
                 model=BT_MODEL,
                 messages=messages,
                 stream=True,
-                options={"temperature": 0.35, "num_predict": 120, "num_ctx": 2048, "stop": ["\n\n\n"]},
+                options={"temperature": 0.65, "num_predict": 400, "num_ctx": 4096, "stop": ["\n\n\n\n"]},
             )
             async for chunk in stream:
                 content = chunk["message"]["content"]
