@@ -489,11 +489,7 @@ export default function App() {
           {/* ── CONFIG TAB ────────────────────────────────────────────────── */}
           {activeTab === 'CONFIG' && (
             <div style={{ flex:1, overflowY:'auto', padding:'24px 32px' }}>
-              <Settings
-                setRefreshInterval={setRefreshInterval}
-                currentInterval={refreshInterval}
-                aiHealth={aiHealth}
-              />
+              <Settings />
             </div>
           )}
         </div>
