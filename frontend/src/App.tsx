@@ -17,6 +17,7 @@ import AlertasPanel from './components/terminal/AlertasPanel'
 import TrendingRadar from './components/terminal/TrendingRadar'
 import NewsPanel from './components/terminal/NewsPanel'
 import MercadoGlobal from './components/mercado/MercadoGlobal'
+import MultiTimeframe from './components/terminal/MultiTimeframe'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -404,6 +405,9 @@ export default function App() {
                     <ChartPanel symbol={currentSymbol} insight={insight} />
                   </ErrorBoundary>
                 </div>
+
+                {/* Multi-timeframe strip */}
+                <MultiTimeframe symbol={currentSymbol} />
 
                 {/* Status bar */}
                 <div style={{ height:62, background:'var(--bg-panel)', borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:0, flexShrink:0, overflow:'hidden' }}>
