@@ -1,11 +1,12 @@
-"""rutas/riesgo.py — /risk/{symbol}, /backtest/{symbol}"""
+"""rutas/riesgo.py — /risk/{symbol}, /backtest/{symbol}, /backtest/autonomo"""
 import json
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from app.config import logger, _has_ml, BINANCE_KLINES, redis_client
 from app.indicadores import IndicadoresTecnicos
 from app.regimen import DetectorRegimen
 from app.calibracion import motor_backtest
+from app.bt.backtest_autonomo import backtest_autonomo as _backtest_autonomo
 
 router = APIRouter()
 
@@ -62,6 +63,32 @@ async def calcular_riesgo(symbol: str, price: float = 0.0, saldo: float = 1000.0
         "ratio_rb":        1.5,
         "regimen":         regimen,
     }
+
+
+@router.get("/backtest/autonomo")
+async def backtest_autonomo_endpoint(
+    symbol:  str   = Query("BTCUSDT", description="Par de Binance (ej. BTCUSDT)"),
+    dias:    int   = Query(90,  ge=30, le=365, description="Días de histórico a simular"),
+    balance: float = Query(1000.0, gt=0, description="Balance inicial en USD"),
+):
+    """
+    Simula el ciclo autónomo de BT sobre datos históricos.
+    Usa señales técnicas reproducibles (LSTM + indicadores).
+    El sentimiento se establece en neutro al no estar disponible históricamente.
+    """
+    symbol = symbol.upper().strip()
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+    try:
+        resultado = await _backtest_autonomo(symbol, dias=dias, balance_inicial=balance)
+        if "error" in resultado:
+            raise HTTPException(status_code=422, detail=resultado["error"])
+        return resultado
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[backtest_autonomo] {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/backtest/{symbol}")

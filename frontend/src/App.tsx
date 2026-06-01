@@ -18,6 +18,7 @@ import TrendingRadar from './components/terminal/TrendingRadar'
 import NewsPanel from './components/terminal/NewsPanel'
 import MercadoGlobal from './components/mercado/MercadoGlobal'
 import MultiTimeframe from './components/terminal/MultiTimeframe'
+import BacktestPanel from './components/agente/BacktestPanel'
 
 const MAIN_COINS = ['BTCUSDT','ETHUSDT','SOLUSDT','TRUMPUSDT','PEPEUSDT','DOGEUSDT','SHIBUSDT']
 
@@ -94,7 +95,7 @@ export default function App() {
   const [refreshInterval, setRefreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]     = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
-  const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'MERCADO' | 'BOT' | 'CONFIG'>('TRADE')
+  const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'MERCADO' | 'BOT' | 'BACKTEST' | 'CONFIG'>('TRADE')
   const [rightTab, setRightTab]         = useState<'CHAT' | 'NOTICIAS'>('CHAT')
   const [dataError, setDataError]       = useState<string | null>(null)
   const [aiHealth, setAiHealth]         = useState<{ lstm: boolean; finbert: boolean } | null>(null)
@@ -542,6 +543,13 @@ export default function App() {
                 onActivar={activar}
                 onPausar={pausar}
               />
+            </div>
+          )}
+
+          {/* ── BACKTEST TAB ──────────────────────────────────────────────── */}
+          {activeTab === 'BACKTEST' && (
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <BacktestPanel />
             </div>
           )}
 
