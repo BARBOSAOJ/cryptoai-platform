@@ -70,9 +70,14 @@ function EquityChart({
   const W = 600, H = 180, PAD = 4
 
   const valores  = equity.map(e => e.valor)
-  const minV     = Math.min(...valores, balanceInicial)
-  const maxV     = Math.max(...valores, balanceInicial * (1 + Math.max(bhRetorno / 100, 0) + 0.01))
-  const rng      = maxV - minV || 1
+  const bhFinal   = balanceInicial * (1 + bhRetorno / 100)
+  const allValues = [...valores, balanceInicial, bhFinal]
+  const rawMin    = Math.min(...allValues)
+  const rawMax    = Math.max(...allValues)
+  const padding   = (rawMax - rawMin) * 0.06 || balanceInicial * 0.01
+  const minV      = rawMin - padding
+  const maxV      = rawMax + padding
+  const rng       = maxV - minV || 1
 
   const toX = (i: number) => PAD + ((i) / (equity.length - 1)) * (W - 2 * PAD)
   const toY = (v: number) => H - PAD - ((v - minV) / rng) * (H - 2 * PAD)
