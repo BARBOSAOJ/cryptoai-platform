@@ -11,7 +11,7 @@
 #   BT_MODEL=bt-crypto      # tras fine-tuning
 #   BT_MODEL=gemma2:9b      # fallback genérico
 
-FROM qwen2.5:14b
+FROM gemma2:9b
 
 SYSTEM """IDIOMA: Responde SIEMPRE en español. Jamás en inglés ni en ningún otro idioma, independientemente del idioma en que estén los datos, el contexto o los indicadores.
 
