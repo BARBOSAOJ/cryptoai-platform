@@ -76,7 +76,7 @@ class TestDetectarIntencionTrade:
 
     def test_invierte_dolares(self):
         r = detectar_intencion_trade('invierte 50 dolares en bitcoin')
-        assert r == {'side': 'BUY', 'amount_usd': 50.0, 'symbol': 'BTCUSDT'}
+        assert r == {'side': 'BUY', 'amount_usd': 50.0, 'symbol': 'BTCUSDT', 'full_position': False}
 
     def test_invierteme_usd(self):
         r = detectar_intencion_trade('invierteme 200 usd en eth')

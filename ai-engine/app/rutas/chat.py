@@ -114,6 +114,7 @@ _OFFTOPIC_KEYWORDS = {
     "fútbol", "baloncesto", "tenis", "partido", "gol", "deporte", "liga",
     "película", "serie", "netflix", "canción", "música", "artista", "concierto",
     "lluvia", "temperatura", "clima", "meteorología",
+    "el tiempo hoy", "qué tiempo hace", "cómo está el tiempo",
     "elecciones", "presidente", "gobierno", "ministro",
     "chiste", "broma",
     "amor", "novia", "novio", "relación", "pareja", "citas",
@@ -241,10 +242,12 @@ def _accion_ui(mensaje: str, simbolos: list) -> dict | None:
 
 def _es_consulta_financiera(mensaje: str) -> bool:
     lower = mensaje.lower()
-    if any(k in lower for k in _FINANCE_KEYWORDS):
-        return True
+    # Offtopic primero — evita falsos positivos por palabras con doble significado
+    # (e.g. "pasta" = dinero, "tiempo" = time series)
     if any(k in lower for k in _OFFTOPIC_KEYWORDS):
         return False
+    if any(k in lower for k in _FINANCE_KEYWORDS):
+        return True
     return True  # benefit of the doubt (saludos, preguntas ambiguas, etc.)
 
 

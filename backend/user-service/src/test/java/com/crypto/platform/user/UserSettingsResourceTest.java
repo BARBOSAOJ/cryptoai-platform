@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.*;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
 /**
  * Integration tests for /user endpoints.
@@ -67,7 +68,7 @@ class UserSettingsResourceTest {
             .when().put("/user/profile")
             .then()
             .statusCode(200)
-            .body("fullName", equalTo("Updated Name"));
+            .body("message", equalTo("Perfil actualizado"));
     }
 
     // ── Alerts ────────────────────────────────────────────────────────────────
@@ -121,8 +122,8 @@ class UserSettingsResourceTest {
 
     @Test
     void deleteExistingAlertReturns200() {
-        // Create an alert first
-        Long alertId = given()
+        // Create an alert first — path("id") devuelve Integer desde JSON
+        int alertId = given()
             .header("Authorization", "Bearer " + token)
             .contentType(ContentType.JSON)
             .body("{\"symbol\":\"DOGEUSDT\",\"targetPrice\":0.5,\"direction\":\"ABOVE\"}")

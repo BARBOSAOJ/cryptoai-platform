@@ -41,12 +41,7 @@ class AuthResourceTest {
 
     @Test
     void loginValidCredentialsReturnsToken() {
-        // Register first
-        given()
-            .contentType("application/json")
-            .body("{\"email\":\"loginok@test.com\",\"password\":\"pass1234\",\"fullName\":\"Login User\"}")
-            .post("/auth/register");
-
+        // El usuario ya existe gracias al @BeforeAll
         given()
             .contentType("application/json")
             .body("{\"email\":\"loginok@test.com\",\"password\":\"pass1234\"}")
@@ -78,6 +73,12 @@ class AuthResourceTest {
 
     @Test
     void loginResponseContainsOnlyTokenField() {
+        // Test autocontenido: registro idempotente (409 si ya existe, ignorado)
+        given()
+            .contentType("application/json")
+            .body("{\"email\":\"loginok@test.com\",\"password\":\"pass1234\",\"fullName\":\"Login User\"}")
+            .post("/auth/register");
+
         given()
             .contentType("application/json")
             .body("{\"email\":\"loginok@test.com\",\"password\":\"pass1234\"}")

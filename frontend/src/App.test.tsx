@@ -43,6 +43,10 @@ vi.mock('./components/terminal/ChartPanel', () => ({
   default: () => <div data-testid="chart-panel" />,
 }))
 
+vi.mock('./components/terminal/MultiTimeframe', () => ({
+  default: () => <div data-testid="multi-timeframe" />,
+}))
+
 vi.mock('./components/shared/LoadingSplash', () => ({
   default: () => <div data-testid="loading-splash" />,
 }))

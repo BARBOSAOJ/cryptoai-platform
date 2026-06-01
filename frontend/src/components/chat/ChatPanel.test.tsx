@@ -128,8 +128,9 @@ describe('ChatPanel', () => {
 
   it('shows error message when stream request fails', async () => {
     mockFetch
-      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
-      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))                          // inicio
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ activo: false }) })  // autonomo/estado
+      .mockRejectedValueOnce(new Error('Network error'))                                     // stream
 
     render(<ChatPanel />)
     const textarea = screen.getByPlaceholderText(/pregunta/i)
@@ -143,8 +144,9 @@ describe('ChatPanel', () => {
 
   it('shows response content after streaming', async () => {
     mockFetch
-      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
-      .mockResolvedValueOnce(makeSseResponse([
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))                          // inicio
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ activo: false }) })  // autonomo/estado
+      .mockResolvedValueOnce(makeSseResponse([                                               // stream
         'data: {"ping":true}\n\n',
         'data: {"content":"Bitcoin está en $95,000"}\n\n',
         'data: [DONE]\n\n',
@@ -183,8 +185,9 @@ describe('ChatPanel', () => {
   it('fires onAction callback when SSE emits action event', async () => {
     const onAction = vi.fn()
     mockFetch
-      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
-      .mockResolvedValueOnce(makeSseResponse([
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))                          // inicio
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ activo: false }) })  // autonomo/estado
+      .mockResolvedValueOnce(makeSseResponse([                                               // stream
         'data: {"ping":true}\n\n',
         'data: {"action":"change_symbol","symbol":"SOLUSDT"}\n\n',
         'data: {"content":"Aquí tienes el gráfico de Solana."}\n\n',
@@ -205,8 +208,9 @@ describe('ChatPanel', () => {
 
   it('action events are not rendered as chat text', async () => {
     mockFetch
-      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))
-      .mockResolvedValueOnce(makeSseResponse([
+      .mockResolvedValueOnce(makeSseResponse(['data: [DONE]\n\n']))                          // inicio
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ activo: false }) })  // autonomo/estado
+      .mockResolvedValueOnce(makeSseResponse([                                               // stream
         'data: {"action":"change_symbol","symbol":"ETHUSDT"}\n\n',
         'data: {"content":"ETH en $2000"}\n\n',
         'data: [DONE]\n\n',

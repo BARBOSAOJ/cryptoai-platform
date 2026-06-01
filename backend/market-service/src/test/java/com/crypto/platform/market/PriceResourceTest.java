@@ -40,7 +40,7 @@ class PriceResourceTest {
     void testRiskCalculateWorks() {
         given()
             .contentType("application/json")
-            .body("{\"balance\":10000,\"riskPercentage\":1,\"entryPrice\":50000,\"stopLoss\":49000}")
+            .body("{\"saldo\":10000,\"riskPercentage\":1,\"entry\":50000,\"stopLoss\":49000}")
             .when().post("/risk/calculate")
             .then()
             .statusCode(200)
