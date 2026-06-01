@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { FlaskConical, TrendingUp, TrendingDown, Activity, ArrowDownRight, Play, Loader2 } from 'lucide-react'
+import { Activity, Swords, Zap, Cpu, ChevronRight } from 'lucide-react'
+import { useCountUp } from '../../hooks/useCountUp'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -17,14 +17,12 @@ interface Trade {
   duracion_h:         number
 }
 
-interface EquityPoint {
-  ts:    string
-  valor: number
-}
+interface EquityPoint { ts: string; valor: number }
 
 interface BacktestResult {
   symbol:             string
   dias:               number
+  intervalo:          string
   balance_inicial:    number
   balance_final:      number
   retorno_pct:        number
@@ -35,6 +33,7 @@ interface BacktestResult {
   max_drawdown_pct:   number
   avg_duracion_h:     number
   candles_analizadas: number
+  elapsed_s:          number
   nota:               string
   trades:             Trade[]
   equity_curve:       EquityPoint[]
@@ -42,159 +41,364 @@ interface BacktestResult {
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
-const SIMBOLOS   = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'DOGEUSDT']
-const DIAS_OPTS  = [30, 60, 90, 180]
-const API_AI     = import.meta.env.VITE_AI_URL || 'http://localhost:8002'
+const SIMBOLOS  = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'DOGEUSDT']
+const DIAS_OPTS = [30, 60, 90, 180]
+const API_AI    = import.meta.env.VITE_AI_URL || 'http://localhost:8002'
 
-const RAZON_LABEL: Record<string, string> = {
-  TP:              'Take Profit',
-  SL:              'Stop Loss',
-  conviction_baja: 'Conviction baja',
-  señal_girada:    'Señal girada',
-  fin_backtest:    'Fin del período',
+const RAZON: Record<string, { label: string; color: string }> = {
+  TP:              { label: 'TAKE PROFIT',   color: '#00d060' },
+  SL:              { label: 'STOP LOSS',     color: '#ff3b3b' },
+  conviction_baja: { label: 'CONV. BAJA',    color: '#f97316' },
+  señal_girada:    { label: 'SEÑAL GIRADA',  color: '#818cf8' },
+  fin_backtest:    { label: 'CIERRE FINAL',  color: '#7890b0' },
 }
 
-// ─── Equity Chart SVG ────────────────────────────────────────────────────────
-
-function EquityChart({
-  equity,
-  balanceInicial,
-  bhRetorno,
-}: {
-  equity:         EquityPoint[]
-  balanceInicial: number
-  bhRetorno:      number
-}) {
-  if (equity.length < 2) return null
-
-  const W = 600, H = 180, PAD = 4
-
-  const valores  = equity.map(e => e.valor)
-  const bhFinal   = balanceInicial * (1 + bhRetorno / 100)
-  const allValues = [...valores, balanceInicial, bhFinal]
-  const rawMin    = Math.min(...allValues)
-  const rawMax    = Math.max(...allValues)
-  const padding   = (rawMax - rawMin) * 0.06 || balanceInicial * 0.01
-  const minV      = rawMin - padding
-  const maxV      = rawMax + padding
-  const rng       = maxV - minV || 1
-
-  const toX = (i: number) => PAD + ((i) / (equity.length - 1)) * (W - 2 * PAD)
-  const toY = (v: number) => H - PAD - ((v - minV) / rng) * (H - 2 * PAD)
-
-  // Línea estrategia
-  const pathStrat = equity
-    .map((e, i) => `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)} ${toY(e.valor).toFixed(1)}`)
-    .join(' ')
-
-  // Línea buy & hold
-  const precioBH0 = balanceInicial
-  const precioBH1 = balanceInicial * (1 + bhRetorno / 100)
-  const pathBH    = `M ${PAD} ${toY(precioBH0).toFixed(1)} L ${(W - PAD).toFixed(1)} ${toY(precioBH1).toFixed(1)}`
-
-  // Área bajo la curva de estrategia
-  const areaStrat = `${pathStrat} L ${toX(equity.length - 1).toFixed(1)} ${H - PAD} L ${PAD} ${H - PAD} Z`
-
-  // Línea base (balance inicial)
-  const yBase = toY(balanceInicial)
-
-  const color = valores[valores.length - 1] >= balanceInicial ? '#2ebd85' : '#f6465d'
-
-  return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      style={{ width: '100%', height: '160px', display: 'block' }}
-    >
-      {/* Grid */}
-      {[0.25, 0.5, 0.75].map(f => (
-        <line
-          key={f}
-          x1={PAD} y1={PAD + f * (H - 2 * PAD)}
-          x2={W - PAD} y2={PAD + f * (H - 2 * PAD)}
-          stroke="rgba(255,255,255,0.05)" strokeWidth="1"
-        />
-      ))}
-
-      {/* Línea base */}
-      <line
-        x1={PAD} y1={yBase}
-        x2={W - PAD} y2={yBase}
-        stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="4 4"
-      />
-
-      {/* Área estrategia */}
-      <defs>
-        <linearGradient id="gradStrat" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.20" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-      <path d={areaStrat} fill="url(#gradStrat)" />
-
-      {/* Buy & Hold */}
-      <path d={pathBH} fill="none" stroke="rgba(148,163,184,0.40)" strokeWidth="1.5" strokeDasharray="5 4" />
-
-      {/* Estrategia */}
-      <path d={pathStrat} fill="none" stroke={color} strokeWidth="2" />
-    </svg>
-  )
+const C = {
+  bt:     '#818cf8',
+  btGlow: 'rgba(129,140,248,0.55)',
+  win:    '#00d060',
+  loss:   '#ff3b3b',
+  ghost:  '#3a4d6e',
 }
 
-// ─── Metric Card ─────────────────────────────────────────────────────────────
+// ─── Oscilloscope dual-equity chart ──────────────────────────────────────────
 
-function MetricCard({
-  label, value, sub, positive,
-}: {
-  label: string; value: string; sub?: string; positive?: boolean
-}) {
-  const color = positive === undefined
-    ? 'var(--text-1)'
-    : positive ? '#2ebd85' : '#f6465d'
+function Oscilloscope({ result }: { result: BacktestResult }) {
+  const eq = result.equity_curve
+  if (eq.length < 2) return null
+
+  const W = 640, H = 230, PX = 8, PY = 16
+
+  // Serie BT en % de retorno
+  const bi      = result.balance_inicial
+  const btPct   = eq.map(e => (e.valor - bi) / bi * 100)
+  // Serie mercado: interpolación lineal del BH a lo largo del período
+  const mkPct   = eq.map((_, i) => (result.bh_retorno_pct * i) / (eq.length - 1))
+
+  const all = [...btPct, ...mkPct, 0]
+  const lo  = Math.min(...all)
+  const hi  = Math.max(...all)
+  const pad = (hi - lo) * 0.12 || 1
+  const min = lo - pad, max = hi + pad
+  const rng = max - min || 1
+
+  const X = (i: number) => PX + (i / (eq.length - 1)) * (W - 2 * PX)
+  const Y = (v: number) => H - PY - ((v - min) / rng) * (H - 2 * PY)
+
+  const toPath = (arr: number[]) =>
+    arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ')
+
+  const btPath = toPath(btPct)
+  const mkPath = toPath(mkPct)
+  const y0     = Y(0)
+  const btWin  = result.retorno_pct >= result.bh_retorno_pct
+  const lineCol = btWin ? C.win : C.loss
+  const endX   = X(eq.length - 1)
+  const endY   = Y(btPct[btPct.length - 1])
+
+  const area = `${btPath} L ${endX.toFixed(1)} ${y0.toFixed(1)} L ${X(0).toFixed(1)} ${y0.toFixed(1)} Z`
 
   return (
-    <div style={{
-      background:   'rgba(255,255,255,0.025)',
-      border:       '1px solid rgba(255,255,255,0.06)',
-      borderRadius: '10px',
-      padding:      '14px 18px',
-    }}>
-      <div style={{ fontSize: '10px', color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
-        {label}
+    <div style={{ position: 'relative' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+           style={{ width: '100%', height: '230px', display: 'block' }}>
+        <defs>
+          <linearGradient id="bt-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor={lineCol} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={lineCol} stopOpacity="0" />
+          </linearGradient>
+          <filter id="bt-glow">
+            <feGaussianBlur stdDeviation="2.5" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        {/* Rejilla blueprint */}
+        {[0.2, 0.4, 0.6, 0.8].map(f => (
+          <line key={f} x1={PX} x2={W - PX} y1={PY + f * (H - 2 * PY)} y2={PY + f * (H - 2 * PY)}
+                stroke="rgba(129,140,248,0.06)" strokeWidth="1" />
+        ))}
+        {[0.25, 0.5, 0.75].map(f => (
+          <line key={f} y1={PY} y2={H - PY} x1={PX + f * (W - 2 * PX)} x2={PX + f * (W - 2 * PX)}
+                stroke="rgba(129,140,248,0.04)" strokeWidth="1" />
+        ))}
+
+        {/* Línea cero */}
+        <line x1={PX} x2={W - PX} y1={y0} y2={y0}
+              stroke="rgba(200,216,236,0.18)" strokeWidth="1" strokeDasharray="2 5" />
+
+        {/* Mercado (ghost) */}
+        <path d={mkPath} fill="none" stroke={C.ghost} strokeWidth="1.5"
+              strokeDasharray="6 5" className="bt-trace"
+              style={{ ['--trace-len' as any]: 4000, animationDelay: '0.1s' }} />
+
+        {/* BT (trazo glow) */}
+        <path d={area} fill="url(#bt-fill)" style={{ opacity: 0, animation: 'fade-in 0.6s ease 1.2s forwards' }} />
+        <path d={btPath} fill="none" stroke={lineCol} strokeWidth="2.4"
+              strokeLinejoin="round" filter="url(#bt-glow)"
+              className="bt-trace" style={{ ['--trace-len' as any]: 4000 }} />
+
+        {/* Blip del punto final */}
+        <circle cx={endX} cy={endY} r="3" fill={lineCol} className="bt-blip"
+                style={{ opacity: 0, animation: 'fade-in 0.3s ease 1.4s forwards, bt-blip 1.6s ease-in-out 1.4s infinite' }} />
+      </svg>
+
+      {/* Leyenda */}
+      <div style={{ position: 'absolute', top: 8, right: 12, display: 'flex', gap: 14, fontSize: 9,
+                    fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.04em' }}>
+        <span style={{ color: lineCol }}>━ BT</span>
+        <span style={{ color: C.ghost }}>╌ MERCADO</span>
       </div>
-      <div style={{ fontSize: '22px', fontWeight: 700, color, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1 }}>
-        {value}
-      </div>
-      {sub && (
-        <div style={{ fontSize: '10px', color: 'var(--text-4)', marginTop: '4px' }}>{sub}</div>
-      )}
     </div>
   )
 }
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+// ─── Tug-of-war: BT vs Mercado ───────────────────────────────────────────────
+
+function Duel({ result }: { result: BacktestResult }) {
+  const alpha   = result.retorno_pct - result.bh_retorno_pct
+  const btWin   = alpha >= 0
+  const alphaCU = useCountUp(alpha, 1100, 2)
+  const btCU    = useCountUp(result.retorno_pct, 1100, 2)
+  const mkCU    = useCountUp(result.bh_retorno_pct, 1100, 2)
+
+  // Escala compartida para las barras (desde el centro)
+  const mag = Math.max(Math.abs(result.retorno_pct), Math.abs(result.bh_retorno_pct), 1)
+  const btW = Math.abs(result.retorno_pct) / mag * 50
+  const mkW = Math.abs(result.bh_retorno_pct) / mag * 50
+
+  const lane = (label: string, val: number, cu: number, w: number, accent: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 34 }}>
+      <div style={{ width: 78, fontSize: 10, fontFamily: '"JetBrains Mono", monospace',
+                    color: 'var(--text-3)', letterSpacing: '0.06em', textAlign: 'right' }}>
+        {label}
+      </div>
+      {/* Arena: centro = 0 */}
+      <div style={{ flex: 1, position: 'relative', height: 22 }}>
+        <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1,
+                      background: 'rgba(200,216,236,0.18)' }} />
+        <div style={{
+          position: 'absolute', top: 3, height: 16, borderRadius: 3,
+          left:  val >= 0 ? '50%' : `${50 - w}%`,
+          width: `${w}%`,
+          background: `linear-gradient(90deg, ${accent}22, ${accent}cc)`,
+          border: `1px solid ${accent}`,
+          boxShadow: `0 0 12px ${accent}55`,
+          transition: 'width 1.1s cubic-bezier(0.16,1,0.3,1), left 1.1s cubic-bezier(0.16,1,0.3,1)',
+        }} />
+      </div>
+      <div style={{ width: 86, fontSize: 15, fontWeight: 700, textAlign: 'right',
+                    fontFamily: '"JetBrains Mono", monospace', color: accent }}>
+        {cu >= 0 ? '+' : ''}{cu.toFixed(2)}%
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="bt-rise" style={{
+      background: 'linear-gradient(135deg, rgba(129,140,248,0.06), rgba(7,16,30,0.4))',
+      border: '1px solid rgba(129,140,248,0.18)', borderRadius: 16, padding: '22px 26px',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      {/* Glow de fondo según veredicto */}
+      <div style={{ position: 'absolute', top: -60, right: -40, width: 200, height: 200,
+                    borderRadius: '50%', filter: 'blur(60px)', pointerEvents: 'none',
+                    background: btWin ? 'rgba(0,208,96,0.12)' : 'rgba(255,59,59,0.10)' }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Swords size={16} color={C.bt} />
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em',
+                         color: 'var(--text-1)', fontFamily: '"JetBrains Mono", monospace' }}>
+            BT&nbsp; vs &nbsp;EL MERCADO
+          </span>
+        </div>
+        {/* Veredicto */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 20,
+          background: btWin ? 'rgba(0,208,96,0.1)' : 'rgba(255,59,59,0.1)',
+          border: `1px solid ${btWin ? 'rgba(0,208,96,0.35)' : 'rgba(255,59,59,0.3)'}`,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%',
+                         background: btWin ? C.win : C.loss, boxShadow: `0 0 8px ${btWin ? C.win : C.loss}` }} />
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
+                         color: btWin ? C.win : C.loss, fontFamily: '"JetBrains Mono", monospace' }}>
+            {btWin ? 'BT GANA' : 'BT PIERDE'}
+          </span>
+        </div>
+      </div>
+
+      {/* Headline: alpha */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 20 }}>
+        <span style={{ fontSize: 44, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em',
+                       fontFamily: '"JetBrains Mono", monospace', color: btWin ? C.win : C.loss }}>
+          {alphaCU >= 0 ? '+' : ''}{alphaCU.toFixed(2)}
+        </span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: btWin ? C.win : C.loss }}>pts</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 4 }}>
+          de alpha sobre comprar y mantener
+        </span>
+      </div>
+
+      {/* Las dos lanes */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {lane('BT', result.retorno_pct, btCU, btW, btWin ? C.win : C.loss)}
+        {lane('MERCADO', result.bh_retorno_pct, mkCU, mkW, C.ghost)}
+      </div>
+    </div>
+  )
+}
+
+// ─── Instrument readout (métrica monospace con count-up) ─────────────────────
+
+function Readout({ label, value, decimals = 2, suffix = '', prefix = '', accent, delay = 0 }: {
+  label: string; value: number; decimals?: number; suffix?: string; prefix?: string
+  accent?: string; delay?: number
+}) {
+  const cu = useCountUp(value, 900, decimals)
+  return (
+    <div className="bt-rise" style={{
+      background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)',
+      borderRadius: 11, padding: '13px 16px', animationDelay: `${delay}ms`,
+      display: 'flex', flexDirection: 'column', gap: 5,
+    }}>
+      <div style={{ fontSize: 9, color: 'var(--text-4)', letterSpacing: '0.1em',
+                    fontFamily: '"JetBrains Mono", monospace' }}>{label}</div>
+      <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1,
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: accent || 'var(--text-1)' }}>
+        {prefix}{cu.toFixed(decimals)}{suffix}
+      </div>
+    </div>
+  )
+}
+
+// ─── Trade ledger (timeline) ─────────────────────────────────────────────────
+
+function Ledger({ trades }: { trades: Trade[] }) {
+  if (trades.length === 0) return null
+  return (
+    <div className="bt-rise" style={{ animationDelay: '300ms' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Activity size={14} color={C.bt} />
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                       color: 'var(--text-2)', fontFamily: '"JetBrains Mono", monospace' }}>
+          REGISTRO DE OPERACIONES · {trades.length}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {trades.map((t, i) => {
+          const win   = t.pnl_pct >= 0
+          const rcol  = win ? C.win : C.loss
+          const razon = RAZON[t.razon] ?? { label: t.razon.toUpperCase(), color: C.ghost }
+          return (
+            <div key={i} style={{
+              display: 'grid',
+              gridTemplateColumns: '4px 1fr auto auto auto',
+              gap: 16, alignItems: 'center',
+              background: 'rgba(255,255,255,0.015)',
+              borderRadius: 10, padding: '11px 16px 11px 0',
+            }}>
+              {/* Rail de color */}
+              <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4,
+                            background: rcol, boxShadow: `0 0 8px ${rcol}66` }} />
+              {/* Fechas */}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-2)', fontFamily: '"JetBrains Mono", monospace',
+                              display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {t.ts_entrada}
+                  <ChevronRight size={11} color="var(--text-4)" />
+                  {t.ts_salida}
+                </div>
+                <div style={{ fontSize: 9.5, color: 'var(--text-4)', marginTop: 3,
+                              fontFamily: '"JetBrains Mono", monospace' }}>
+                  ${t.precio_entrada.toLocaleString()} → ${t.precio_salida.toLocaleString()}
+                  &nbsp;·&nbsp; {t.duracion_h}h &nbsp;·&nbsp; conv {t.conviction_entrada}
+                </div>
+              </div>
+              {/* Razón */}
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                             padding: '3px 9px', borderRadius: 5,
+                             color: razon.color, background: `${razon.color}18`,
+                             border: `1px solid ${razon.color}33`,
+                             fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}>
+                {razon.label}
+              </span>
+              {/* P&L % */}
+              <div style={{ fontSize: 14, fontWeight: 700, textAlign: 'right', minWidth: 64,
+                            color: rcol, fontFamily: '"JetBrains Mono", monospace' }}>
+                {win ? '+' : ''}{t.pnl_pct.toFixed(2)}%
+              </div>
+              {/* P&L $ */}
+              <div style={{ fontSize: 11, textAlign: 'right', minWidth: 70,
+                            color: 'var(--text-3)', fontFamily: '"JetBrains Mono", monospace' }}>
+                {win ? '+' : ''}${t.pnl_usd.toFixed(2)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Loading oscilloscope ────────────────────────────────────────────────────
+
+function Scanning({ symbol, dias }: { symbol: string; dias: number }) {
+  return (
+    <div style={{
+      position: 'relative', overflow: 'hidden', borderRadius: 16, height: 280,
+      background: 'rgba(7,16,30,0.5)', border: '1px solid rgba(129,140,248,0.15)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16,
+    }}>
+      {/* Rejilla */}
+      <div style={{ position: 'absolute', inset: 0, opacity: 0.4,
+        backgroundImage: 'linear-gradient(rgba(129,140,248,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(129,140,248,0.06) 1px, transparent 1px)',
+        backgroundSize: '32px 32px' }} />
+      {/* Barrido */}
+      <div style={{ position: 'absolute', top: 0, bottom: 0, width: 80,
+        background: 'linear-gradient(90deg, transparent, rgba(129,140,248,0.22), transparent)',
+        animation: 'bt-sweep 1.4s ease-in-out infinite' }} />
+      {/* Anillo pulsante */}
+      <div style={{ position: 'relative', width: 46, height: 46 }}>
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '50%',
+          border: `2px solid ${C.bt}`, animation: 'bt-ring 1.6s ease-out infinite' }} />
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Cpu size={20} color={C.bt} />
+        </div>
+      </div>
+      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, color: 'var(--text-2)',
+                    letterSpacing: '0.1em', zIndex: 1 }}>
+        ANALIZANDO {symbol} · {dias}d
+        <span className="bt-caret" style={{ color: C.bt }}>▋</span>
+      </div>
+      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9.5, color: 'var(--text-4)',
+                    letterSpacing: '0.06em', zIndex: 1 }}>
+        LSTM batch · indicadores · simulación de ciclo
+      </div>
+    </div>
+  )
+}
+
+// ─── Componente principal ────────────────────────────────────────────────────
 
 export default function BacktestPanel() {
-  const [symbol,   setSymbol]   = useState('BTCUSDT')
-  const [dias,     setDias]     = useState(90)
-  const [balance,  setBalance]  = useState(1000)
-  const [loading,  setLoading]  = useState(false)
-  const [result,   setResult]   = useState<BacktestResult | null>(null)
-  const [error,    setError]    = useState<string | null>(null)
+  const [symbol,  setSymbol]  = useState('BTCUSDT')
+  const [dias,    setDias]    = useState(90)
+  const [balance, setBalance] = useState(1000)
+  const [loading, setLoading] = useState(false)
+  const [result,  setResult]  = useState<BacktestResult | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   const ejecutar = async () => {
-    setLoading(true)
-    setError(null)
-    setResult(null)
+    setLoading(true); setError(null); setResult(null)
     try {
-      const url = `${API_AI}/backtest/autonomo?symbol=${symbol}&dias=${dias}&balance=${balance}`
-      const res = await fetch(url)
+      const res = await fetch(`${API_AI}/backtest/autonomo?symbol=${symbol}&dias=${dias}&balance=${balance}`)
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ detail: 'Error desconocido' }))
-        throw new Error(body.detail || `HTTP ${res.status}`)
+        const b = await res.json().catch(() => ({ detail: 'Error desconocido' }))
+        throw new Error(b.detail || `HTTP ${res.status}`)
       }
-      const data = await res.json()
-      setResult(data)
+      setResult(await res.json())
     } catch (e: any) {
       setError(e.message || 'Error de conexión')
     } finally {
@@ -203,301 +407,191 @@ export default function BacktestPanel() {
   }
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: '26px 30px', maxWidth: 940, margin: '0 auto', position: 'relative' }}>
 
-      {/* Cabecera */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
-        <FlaskConical size={20} color="#818cf8" />
-        <div>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-1)' }}>
-            Backtest — Modo Autónomo
+      {/* Blueprint background */}
+      <div style={{ position: 'absolute', inset: 0, opacity: 0.5, pointerEvents: 'none', zIndex: 0,
+        backgroundImage: 'radial-gradient(rgba(129,140,248,0.04) 1px, transparent 1px)',
+        backgroundSize: '22px 22px' }} />
+
+      <div style={{ position: 'relative', zIndex: 1 }}>
+
+        {/* ── Header terminal ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+                        background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.28)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 0 16px rgba(129,140,248,0.18)' }}>
+            <Zap size={18} color={C.bt} />
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-4)' }}>
-            Simulación histórica de la estrategia de BT sobre datos técnicos reales
-          </div>
-        </div>
-      </div>
-
-      {/* Controles */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '10px',
-        marginBottom: '20px', alignItems: 'end',
-      }}>
-        {/* Símbolo */}
-        <div>
-          <label style={labelStyle}>Par</label>
-          <select value={symbol} onChange={e => setSymbol(e.target.value)} style={selectStyle}>
-            {SIMBOLOS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        {/* Días */}
-        <div>
-          <label style={labelStyle}>Período</label>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {DIAS_OPTS.map(d => (
-              <button
-                key={d}
-                onClick={() => setDias(d)}
-                style={{
-                  flex: 1, padding: '7px 0', fontSize: '12px', fontWeight: 600,
-                  borderRadius: '7px', border: 'none', cursor: 'pointer',
-                  background:   dias === d ? '#818cf8' : 'rgba(255,255,255,0.04)',
-                  color:        dias === d ? '#fff' : 'var(--text-3)',
-                }}
-              >
-                {d}d
-              </button>
-            ))}
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '0.02em' }}>
+              BT&nbsp;LAB
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-4)', marginLeft: 9,
+                             fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.08em' }}>
+                BACKTEST · MODO AUTÓNOMO
+              </span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontFamily: '"JetBrains Mono", monospace' }}>
+              ¿Habría batido BT al mercado? Simulación sobre datos reales.
+            </div>
           </div>
         </div>
 
-        {/* Balance */}
-        <div>
-          <label style={labelStyle}>Balance inicial (USD)</label>
-          <input
-            type="number" value={balance} min={100} step={100}
-            onChange={e => setBalance(Number(e.target.value))}
-            style={inputStyle}
-          />
-        </div>
-
-        {/* Botón */}
-        <button
-          onClick={ejecutar}
-          disabled={loading}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '8px 18px', borderRadius: '8px', border: 'none',
-            background: loading ? '#4a4a6a' : '#818cf8', color: '#fff',
-            fontWeight: 700, fontSize: '13px', cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading
-            ? <><Loader2 size={14} className="spin" /> Simulando…</>
-            : <><Play size={14} /> Ejecutar</>
-          }
-        </button>
-      </div>
-
-      {/* Error */}
-      {error && (
+        {/* ── Control deck ── */}
         <div style={{
-          background: 'rgba(246,70,93,0.08)', border: '1px solid rgba(246,70,93,0.2)',
-          borderRadius: '8px', padding: '12px 16px', color: '#f6465d',
-          fontSize: '13px', marginBottom: '16px',
+          display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 22, flexWrap: 'wrap',
+          background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)',
+          borderRadius: 12, padding: '14px 16px',
         }}>
-          {error}
+          <Field label="PAR">
+            <select value={symbol} onChange={e => setSymbol(e.target.value)} style={selectStyle}>
+              {SIMBOLOS.map(s => <option key={s} value={s}>{s.replace('USDT', '')}</option>)}
+            </select>
+          </Field>
+
+          <Field label="PERÍODO">
+            <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 3 }}>
+              {DIAS_OPTS.map(d => (
+                <button key={d} onClick={() => setDias(d)} style={{
+                  padding: '6px 13px', fontSize: 12, fontWeight: 700, borderRadius: 6, border: 'none',
+                  cursor: 'pointer', fontFamily: '"JetBrains Mono", monospace',
+                  background: dias === d ? C.bt : 'transparent',
+                  color: dias === d ? '#0a0f1e' : 'var(--text-3)',
+                  transition: 'all 0.15s ease',
+                }}>{d}d</button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="CAPITAL USD">
+            <input type="number" value={balance} min={100} step={100}
+                   onChange={e => setBalance(Number(e.target.value))} style={inputStyle} />
+          </Field>
+
+          <button onClick={ejecutar} disabled={loading} style={{
+            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 22px', borderRadius: 9, border: 'none',
+            background: loading ? '#2a3550' : `linear-gradient(135deg, ${C.bt}, #6366f1)`,
+            color: loading ? 'var(--text-3)' : '#0a0f1e', fontWeight: 800, fontSize: 13,
+            fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.04em',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            boxShadow: loading ? 'none' : '0 0 20px rgba(129,140,248,0.35)',
+            transition: 'all 0.2s ease',
+          }}>
+            <Zap size={15} /> {loading ? 'SIMULANDO' : 'EJECUTAR'}
+          </button>
         </div>
-      )}
 
-      {/* Resultados */}
-      <AnimatePresence>
-        {result && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            {/* Métricas principales */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px', marginBottom: '16px' }}>
-              <MetricCard
-                label="Retorno estrategia"
-                value={`${result.retorno_pct >= 0 ? '+' : ''}${result.retorno_pct.toFixed(2)}%`}
-                sub={`$${result.balance_inicial} → $${result.balance_final.toFixed(0)}`}
-                positive={result.retorno_pct >= 0}
-              />
-              <MetricCard
-                label="vs Buy & Hold"
-                value={`${(result.retorno_pct - result.bh_retorno_pct).toFixed(2)}%`}
-                sub={`BH: ${result.bh_retorno_pct >= 0 ? '+' : ''}${result.bh_retorno_pct.toFixed(2)}%`}
-                positive={result.retorno_pct >= result.bh_retorno_pct}
-              />
-              <MetricCard
-                label="Sharpe ratio"
-                value={result.sharpe.toFixed(3)}
-                sub="Anualizado · señales/hora"
-                positive={result.sharpe > 0}
-              />
-              <MetricCard
-                label="Max Drawdown"
-                value={`-${result.max_drawdown_pct.toFixed(2)}%`}
-                positive={result.max_drawdown_pct < 15}
-              />
-            </div>
-
-            {/* Métricas secundarias */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px', marginBottom: '20px' }}>
-              <MetricCard label="Trades" value={String(result.num_trades)} />
-              <MetricCard
-                label="Win rate"
-                value={`${result.win_rate_pct.toFixed(1)}%`}
-                positive={result.win_rate_pct >= 50}
-              />
-              <MetricCard label="Duración media" value={`${result.avg_duracion_h.toFixed(1)}h`} />
-              <MetricCard label="Velas analizadas" value={String(result.candles_analizadas)} />
-            </div>
-
-            {/* Gráfico de equity */}
-            <div style={{
-              background:   'rgba(255,255,255,0.02)',
-              border:       '1px solid rgba(255,255,255,0.06)',
-              borderRadius: '12px',
-              padding:      '16px',
-              marginBottom: '20px',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-2)' }}>
-                  Curva de equity · {result.symbol} · {result.dias}d
-                </div>
-                <div style={{ display: 'flex', gap: '16px', fontSize: '10px', color: 'var(--text-4)' }}>
-                  <span>
-                    <span style={{ display:'inline-block', width:'20px', height:'2px', background: result.retorno_pct >= 0 ? '#2ebd85' : '#f6465d', marginRight:'5px', verticalAlign:'middle' }} />
-                    Estrategia
-                  </span>
-                  <span>
-                    <span style={{ display:'inline-block', width:'20px', height:'2px', background:'rgba(148,163,184,0.4)', marginRight:'5px', verticalAlign:'middle', borderBottom:'2px dashed rgba(148,163,184,0.4)', height:'0' }} />
-                    Buy &amp; Hold
-                  </span>
-                </div>
-              </div>
-              <EquityChart
-                equity={result.equity_curve}
-                balanceInicial={result.balance_inicial}
-                bhRetorno={result.bh_retorno_pct}
-              />
-            </div>
-
-            {/* Nota sobre sentimiento */}
-            <div style={{
-              fontSize: '10px', color: 'var(--text-4)', marginBottom: '16px',
-              padding: '8px 12px', background: 'rgba(255,255,255,0.02)',
-              borderRadius: '6px', borderLeft: '2px solid rgba(129,140,248,0.3)',
-            }}>
-              ℹ️ {result.nota}
-            </div>
-
-            {/* Tabla de trades */}
-            {result.trades.length > 0 && (
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-2)', marginBottom: '10px' }}>
-                  Historial de operaciones ({result.trades.length})
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                    <thead>
-                      <tr style={{ color: 'var(--text-4)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                        {['Entrada', 'Salida', 'Precio entrada', 'Precio salida', 'P&L %', 'P&L $', 'Razón', 'Conv.', 'Duración'].map(h => (
-                          <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.trades.map((t, i) => (
-                        <tr
-                          key={i}
-                          style={{
-                            borderBottom: '1px solid rgba(255,255,255,0.03)',
-                            background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
-                          }}
-                        >
-                          <td style={tdStyle}>{t.ts_entrada}</td>
-                          <td style={tdStyle}>{t.ts_salida}</td>
-                          <td style={{ ...tdStyle, fontFamily: '"JetBrains Mono", monospace' }}>
-                            ${t.precio_entrada.toLocaleString()}
-                          </td>
-                          <td style={{ ...tdStyle, fontFamily: '"JetBrains Mono", monospace' }}>
-                            ${t.precio_salida.toLocaleString()}
-                          </td>
-                          <td style={{ ...tdStyle, color: t.pnl_pct >= 0 ? '#2ebd85' : '#f6465d', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
-                            {t.pnl_pct >= 0 ? '+' : ''}{t.pnl_pct.toFixed(2)}%
-                          </td>
-                          <td style={{ ...tdStyle, color: t.pnl_usd >= 0 ? '#2ebd85' : '#f6465d', fontFamily: '"JetBrains Mono", monospace' }}>
-                            {t.pnl_usd >= 0 ? '+' : ''}${t.pnl_usd.toFixed(2)}
-                          </td>
-                          <td style={tdStyle}>
-                            <span style={{
-                              padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
-                              background: t.razon === 'TP'
-                                ? 'rgba(46,189,133,0.12)' : t.razon === 'SL'
-                                ? 'rgba(246,70,93,0.12)'  : 'rgba(129,140,248,0.10)',
-                              color: t.razon === 'TP'
-                                ? '#2ebd85' : t.razon === 'SL'
-                                ? '#f6465d'  : '#818cf8',
-                            }}>
-                              {RAZON_LABEL[t.razon] ?? t.razon}
-                            </span>
-                          </td>
-                          <td style={{ ...tdStyle, color: 'var(--text-3)' }}>{t.conviction_entrada}</td>
-                          <td style={{ ...tdStyle, color: 'var(--text-4)' }}>{t.duracion_h}h</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {result.trades.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-4)', fontSize: '13px' }}>
-                Ningún trade ejecutado en el período con los umbrales actuales.
-                <br />
-                <span style={{ fontSize: '11px' }}>Prueba un período mayor o reduce el umbral de entrada.</span>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Estado vacío */}
-      {!result && !loading && !error && (
-        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-4)' }}>
-          <Activity size={32} style={{ marginBottom: '12px', opacity: 0.3 }} />
-          <div style={{ fontSize: '13px' }}>Configura los parámetros y pulsa <b>Ejecutar</b></div>
-          <div style={{ fontSize: '11px', marginTop: '6px' }}>
-            Umbral entrada: {72} · TP: +15% · SL: -8%
+        {/* ── Error ── */}
+        {error && (
+          <div style={{ background: 'rgba(255,59,59,0.08)', border: '1px solid rgba(255,59,59,0.25)',
+                        borderRadius: 10, padding: '12px 16px', color: C.loss, fontSize: 13,
+                        marginBottom: 16, fontFamily: '"JetBrains Mono", monospace' }}>
+            ⚠ {error}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ── Loading ── */}
+        {loading && <Scanning symbol={symbol} dias={dias} />}
+
+        {/* ── Resultados ── */}
+        {result && !loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Duelo */}
+            <Duel result={result} />
+
+            {/* Osciloscopio + readouts (layout asimétrico) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.55fr 1fr', gap: 16 }}>
+              {/* Osciloscopio */}
+              <div className="bt-rise" style={{
+                background: 'rgba(7,16,30,0.4)', border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: 14, padding: '14px 16px', animationDelay: '120ms',
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-3)',
+                              fontFamily: '"JetBrains Mono", monospace', marginBottom: 4 }}>
+                  CURVA DE CAPITAL · {result.symbol.replace('USDT','')} · {result.intervalo}
+                </div>
+                <Oscilloscope result={result} />
+              </div>
+
+              {/* Readouts verticales */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Readout label="SHARPE RATIO" value={result.sharpe} decimals={3} delay={150}
+                         accent={result.sharpe > 0 ? C.win : C.loss} />
+                <Readout label="MAX DRAWDOWN" value={result.max_drawdown_pct} suffix="%" prefix="-"
+                         delay={210} accent={result.max_drawdown_pct < 15 ? 'var(--text-1)' : C.loss} />
+                <Readout label="WIN RATE" value={result.win_rate_pct} suffix="%" decimals={1}
+                         delay={270} accent={result.win_rate_pct >= 50 ? C.win : 'var(--text-1)'} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <Readout label="TRADES" value={result.num_trades} decimals={0} delay={330} />
+                  <Readout label="DURACIÓN" value={result.avg_duracion_h} suffix="h" decimals={1} delay={360} />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer técnico */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          fontSize: 9.5, color: 'var(--text-4)', fontFamily: '"JetBrains Mono", monospace',
+                          padding: '0 4px' }}>
+              <span>◷ {result.candles_analizadas} velas · {result.elapsed_s}s de cómputo</span>
+              <span>sentimiento neutro · solo señales técnicas + LSTM</span>
+            </div>
+
+            {/* Ledger */}
+            {result.num_trades > 0
+              ? <Ledger trades={result.trades} />
+              : (
+                <div className="bt-rise" style={{ textAlign: 'center', padding: '28px',
+                  color: 'var(--text-3)', fontSize: 13, fontFamily: '"JetBrains Mono", monospace',
+                  background: 'rgba(255,255,255,0.015)', borderRadius: 12, animationDelay: '300ms' }}>
+                  BT no abrió ninguna posición — la convicción nunca superó el umbral 72.
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 6 }}>
+                    Mantenerse fuera también es una decisión. Prueba un período más largo.
+                  </div>
+                </div>
+              )}
+          </div>
+        )}
+
+        {/* ── Idle ── */}
+        {!result && !loading && !error && (
+          <div style={{ textAlign: 'center', padding: '52px 0', color: 'var(--text-4)' }}>
+            <Swords size={30} style={{ opacity: 0.25, marginBottom: 14 }} />
+            <div style={{ fontSize: 13, fontFamily: '"JetBrains Mono", monospace', color: 'var(--text-3)' }}>
+              Configura el experimento y pulsa <b style={{ color: C.bt }}>EJECUTAR</b>
+            </div>
+            <div style={{ fontSize: 10.5, marginTop: 8, fontFamily: '"JetBrains Mono", monospace' }}>
+              entrada conv ≥72 · take profit +15% · stop loss −8%
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// ─── Estilos ─────────────────────────────────────────────────────────────────
+// ─── Sub-helpers ─────────────────────────────────────────────────────────────
 
-const labelStyle: React.CSSProperties = {
-  display:      'block',
-  fontSize:     '10px',
-  color:        'var(--text-4)',
-  marginBottom: '5px',
-  fontWeight:   600,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 9, color: 'var(--text-4)', marginBottom: 6, letterSpacing: '0.1em',
+                    fontFamily: '"JetBrains Mono", monospace' }}>{label}</div>
+      {children}
+    </div>
+  )
 }
 
 const selectStyle: React.CSSProperties = {
-  width:        '100%',
-  padding:      '8px 10px',
-  background:   'rgba(255,255,255,0.04)',
-  border:       '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '8px',
-  color:        'var(--text-1)',
-  fontSize:     '13px',
+  padding: '8px 12px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 8, color: 'var(--text-1)', fontSize: 13, fontWeight: 600,
+  fontFamily: '"JetBrains Mono", monospace', cursor: 'pointer', minWidth: 90,
 }
 
 const inputStyle: React.CSSProperties = {
-  width:        '100%',
-  padding:      '8px 10px',
-  background:   'rgba(255,255,255,0.04)',
-  border:       '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '8px',
-  color:        'var(--text-1)',
-  fontSize:     '13px',
-  boxSizing:    'border-box',
-}
-
-const tdStyle: React.CSSProperties = {
-  padding:   '7px 10px',
-  color:     'var(--text-2)',
-  whiteSpace: 'nowrap',
+  padding: '8px 12px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 8, color: 'var(--text-1)', fontSize: 13, fontWeight: 600, width: 110,
+  fontFamily: '"JetBrains Mono", monospace', boxSizing: 'border-box',
 }

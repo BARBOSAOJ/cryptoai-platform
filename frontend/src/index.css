@@ -142,6 +142,50 @@ input[type=number] { -moz-appearance: textfield; }
   100% { opacity: 0; transform: translateY(calc(100vh + 20px)); }
 }
 
+/* ── BT signature animations ────────────────────────────────────────────────── */
+/* Trazo de osciloscopio: la línea se dibuja sola de izquierda a derecha */
+@keyframes bt-trace {
+  from { stroke-dashoffset: var(--trace-len, 2000); }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Barrido de escaneo durante la simulación */
+@keyframes bt-sweep {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+/* Pulso del anillo de estado vivo */
+@keyframes bt-ring {
+  0%   { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Entrada en cascada de los módulos de métrica */
+@keyframes bt-rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Latido del punto de datos final en la curva */
+@keyframes bt-blip {
+  0%, 100% { r: 3; opacity: 1; }
+  50%      { r: 5; opacity: 0.5; }
+}
+
+/* Parpadeo del cursor de terminal */
+@keyframes bt-caret {
+  0%, 49%  { opacity: 1; }
+  50%, 100%{ opacity: 0; }
+}
+
+.bt-trace     { stroke-dasharray: var(--trace-len, 2000); animation: bt-trace 1.5s cubic-bezier(0.4,0,0.2,1) forwards; }
+.bt-blip      { animation: bt-blip 1.6s ease-in-out infinite; }
+.bt-caret     { animation: bt-caret 1.1s step-end infinite; }
+.bt-rise      { animation: bt-rise 0.5s cubic-bezier(0.16,1,0.3,1) backwards; }
+
 /* ── Utility classes ────────────────────────────────────────────────────────── */
 .price-flash-up   { animation: flash-up   0.55s ease-out forwards; }
 .price-flash-down { animation: flash-down 0.55s ease-out forwards; }
