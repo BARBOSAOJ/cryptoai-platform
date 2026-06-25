@@ -2,13 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, User, Loader2, MessageCircle, Bell, X, Zap } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { API_AI } from '../../api'
-
-interface Mensaje {
-  role: 'user' | 'assistant' | 'alerta'
-  content: string
-  ts: string
-  urgencia?: number
-}
+import { useChatMensajes, chatStore, type Mensaje } from './chatStore'
 
 interface BtAction {
   action: string
@@ -32,7 +26,7 @@ const SUGERENCIAS = [
 
 const msgVariants = {
   hidden: { opacity: 0, y: 10, scale: 0.97 },
-  show:   { opacity: 1, y: 0,  scale: 1, transition: { duration: 0.22, ease: [0.25,0.46,0.45,0.94] } },
+  show:   { opacity: 1, y: 0,  scale: 1, transition: { duration: 0.22, ease: [0.25,0.46,0.45,0.94] as const } },
   exit:   { opacity: 0, scale: 0.96, transition: { duration: 0.15 } },
 }
 
@@ -42,7 +36,7 @@ const suggestVariants = {
 }
 
 export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelProps) {
-  const [mensajes, setMensajes]     = useState<Mensaje[]>([])
+  const [mensajes, setMensajes]     = useChatMensajes()
   const [input, setInput]           = useState('')
   const [cargando, setCargando]     = useState(false)
   const [analizando, setAnalizando] = useState(false)
@@ -53,18 +47,17 @@ export default function ChatPanel({ onClose, onNewAlert, onAction }: ChatPanelPr
   const bottomRef                   = useRef<HTMLDivElement>(null)
   const inputRef                    = useRef<HTMLTextAreaElement>(null)
   const abortRef                    = useRef<AbortController | null>(null)
-  const greetingFired               = useRef(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensajes])
 
-  // Initial briefing
+  // Initial briefing — solo la primera vez por sesión (sobrevive a cambios de pestaña)
   useEffect(() => {
-    if (greetingFired.current) return
-    greetingFired.current = true
+    if (chatStore.hasGreeted()) return
+    chatStore.markGreeted()
     const token = localStorage.getItem('token')
-    if (!token) return
+    if (!token) { chatStore.reset(); return }
     setSaludando(true)
     const btMsg: Mensaje = { role: 'assistant', content: '', ts: new Date().toISOString() }
     setMensajes([btMsg])

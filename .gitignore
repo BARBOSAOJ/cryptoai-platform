@@ -24,6 +24,10 @@ dist/
 ai-engine/models/*.keras
 ai-engine/models/*.h5
 ai-engine/models/*.gz
+# Modelos del fine-tuning de BT (GGUF/LoRA/merged, varios GB — no versionar)
+ai-engine/models/bt-gguf/
+ai-engine/models/bt-lora/
+ai-engine/models/bt-merged/
 
 # Archivos de runtime
 .pids/

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Activity, Power, TrendingUp, TrendingDown, Target, AlertTriangle, Zap } from 'lucide-react'
+import { Activity, Power, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiClient, aiClient, API_PRICE } from './api'
 import Header from './components/shared/Header'
@@ -9,6 +9,7 @@ import Login from './components/Login'
 import LoadingSplash from './components/shared/LoadingSplash'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import ChatPanel from './components/chat/ChatPanel'
+import { chatStore } from './components/chat/chatStore'
 import Portfolio from './components/portfolio/Portfolio'
 import { useAgenteAutonomo } from './hooks/useAgenteAutonomo'
 import type { PosicionAbierta, EntradaLog } from './hooks/useAgenteAutonomo'
@@ -91,8 +92,8 @@ export default function App() {
 
   const [marketData, setMarketData]     = useState<Record<string, any>>({})
   const [aiInsights, setAiInsights]     = useState<Record<string, any>>({})
-  const [tradeHistory, setTradeHistory] = useState<any[]>([])
-  const [refreshInterval, setRefreshInterval] = useState(3000)
+  const [, setTradeHistory] = useState<any[]>([])
+  const [refreshInterval] = useState(3000)
   const [alertFlash, setAlertFlash]     = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const [activeTab, setActiveTab]       = useState<'TRADE' | 'PORTFOLIO' | 'MERCADO' | 'BOT' | 'BACKTEST' | 'CONFIG'>('TRADE')
@@ -302,6 +303,7 @@ export default function App() {
     localStorage.removeItem('token')
     localStorage.removeItem('userName')
     localStorage.removeItem('userPlan')
+    chatStore.reset()
     setIsLoggedIn(false)
   }
 
@@ -452,7 +454,7 @@ export default function App() {
                       <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} style={{ display:'flex', alignItems:'center', gap:6 }}>
                         <Activity size={10} color="var(--green)" />
                         <span style={{ fontSize:9, color:'var(--text-4)', fontFamily:'JetBrains Mono, monospace' }}>
-                          {Object.values(estadoAgente.posicionesAbiertas).length} pos · {estadoAgente.log[0]?.mensaje?.slice(0,38) || 'vigilando'}
+                          {Object.values(estadoAgente.posicionesAbiertas).length} pos · {estadoAgente.log[0]?.motivo?.slice(0,38) || 'vigilando'}
                         </span>
                       </motion.div>
                     )}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import ChatPanel from './ChatPanel'
+import { chatStore } from './chatStore'
 
 vi.mock('framer-motion', () => ({
   motion: new Proxy({}, {
@@ -39,6 +40,7 @@ const makeSseResponse = (lines: string[]) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  chatStore.reset()   // el store es un singleton de módulo: reiniciar entre tests
   localStorage.setItem('token', 'test-token')
   // Default: /chat/inicio returns empty stream
   mockFetch.mockResolvedValue(makeSseResponse(['data: [DONE]\n\n']))
